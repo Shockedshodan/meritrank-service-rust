@@ -10,6 +10,7 @@ mod error;
 mod lib_graph; // This module contains graph related operations and data structures
 
 const SERVICE_URL: &str = "tcp://127.0.0.1:10234";
+
 fn main() -> Result<(), Box<dyn std::error::Error + 'static>> {
     println!("Starting server at {SERVICE_URL}");
 
