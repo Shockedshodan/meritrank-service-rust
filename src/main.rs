@@ -32,7 +32,7 @@ fn main() -> Result<(), Box<dyn std::error::Error + 'static>> {
             mr_edge(subject, object, amount)
         } else {
             let err: String = format!("Error: Cannot understand request {:?}", &req[..]);
-            println!("{}", err);
+            eprintln!("{}", err);
             Err(err.into())
         };
 
