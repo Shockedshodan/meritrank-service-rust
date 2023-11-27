@@ -1,7 +1,9 @@
+use std::thread;
+use std::time::Duration;
 use crate::error::GraphManipulationError;
 use crate::graph::{GraphSingleton, NodeId, GRAPH};
 use crate::lib_graph::Weight;
-use nng::{Message, Protocol, Socket};
+use nng::{Aio, AioResult, Context, Message, Protocol, Socket};
 
 mod graph; // This module is for graph related operations
 // #[cfg(feature = "shared")]
@@ -13,6 +15,9 @@ mod lib_graph; // This module contains graph related operations and data structu
 const SERVICE_URL: &str = "tcp://127.0.0.1:10234";
 
 fn main() -> Result<(), Box<dyn std::error::Error + 'static>> {
+    main_async()
+}
+fn main_sync() -> Result<(), Box<dyn std::error::Error + 'static>> {
     println!("Starting server at {SERVICE_URL}");
 
     let s = Socket::new(Protocol::Rep0)?;
@@ -33,6 +38,59 @@ fn main() -> Result<(), Box<dyn std::error::Error + 'static>> {
         let _ = s.send(reply.as_slice()).map_err(|(_, e)| e)?;
     }
     // Ok(())
+}
+
+const PARALLEL: usize = 128;
+fn main_async() -> Result<(), Box<dyn std::error::Error + 'static>> {
+    println!("Starting server at {SERVICE_URL}");
+
+    let s = Socket::new(Protocol::Rep0)?;
+
+    // Create all of the worker contexts
+    let workers: Vec<_> = (0..PARALLEL)
+        .map(|_| {
+            let ctx = Context::new(&s)?;
+            let ctx_clone = ctx.clone();
+            let aio = Aio::new(move |aio, res| worker_callback(aio, &ctx_clone, res))?;
+            Ok((aio, ctx))
+        })
+        .collect::<Result<_, nng::Error>>()?;
+
+    // Only after we have the workers do we start listening.
+    s.listen(SERVICE_URL)?;
+
+    // Now start all of the workers listening.
+    for (a, c) in &workers {
+        c.recv(a)?;
+    }
+
+    thread::sleep(Duration::from_secs(60 * 60 * 24 * 365));
+
+    Ok(())
+}
+
+/// Callback function for workers.
+fn worker_callback(aio: Aio, ctx: &Context, res: AioResult) {
+    match res {
+        // We successfully sent the message, wait for a new one.
+        AioResult::Send(Ok(_)) => ctx.recv(&aio).unwrap(),
+
+        // We successfully received a message.
+        AioResult::Recv(Ok(req)) => {
+            let msg: Vec<u8> = process(req).unwrap();
+            ctx.send(&aio, msg.as_slice()).unwrap();
+        }
+
+        AioResult::Sleep(_) =>
+            println!("Slept!"),
+
+        // Anything else is an error and we will just panic.
+        AioResult::Send(Err(e)) =>
+            panic!("Error: {}", e.1),
+
+        AioResult::Recv(Err(e)) =>
+            panic!("Error: {}", e)
+    }
 }
 
 fn process(req: Message) -> Result<Vec<u8>, Box<dyn std::error::Error>> {
