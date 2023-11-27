@@ -78,7 +78,11 @@ fn worker_callback(aio: Aio, ctx: &Context, res: AioResult) {
 
         // We successfully received a message.
         AioResult::Recv(Ok(req)) => {
-            let msg: Vec<u8> = process(req).unwrap();
+            let msg: Vec<u8> = process(req).unwrap_or_else(|e| {
+                println!("{}", e);
+                let s: String = e.to_string();
+                rmp_serde::to_vec(&s).unwrap()
+            });
             ctx.send(&aio, msg.as_slice()).unwrap();
         }
 
