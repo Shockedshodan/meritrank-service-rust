@@ -19,25 +19,10 @@ fn main() -> Result<(), Box<dyn std::error::Error + 'static>> {
     s.listen(SERVICE_URL)?;
 
     loop {
-        let req: Message = s.recv()?;
-        let slice = req.as_slice();
-
-        let result: Result<Vec<u8>, Box<dyn std::error::Error>> = if let Ok(((("src", "=", ego), ("dest", "=", target)), ())) =
-            rmp_serde::from_slice(slice)
-        {
-            mr_node_score(ego, target)
-        } else if let Ok(((("src", "=", ego), ), ())) = rmp_serde::from_slice(slice) {
-            mr_scores(ego)
-        } else if let Ok((((subject, object, amount), ), ())) = rmp_serde::from_slice(slice) {
-            mr_edge(subject, object, amount)
-        } else {
-            let err: String = format!("Error: Cannot understand request {:?}", &req[..]);
-            eprintln!("{}", err);
-            Err(err.into())
-        };
+        let request: Message = s.recv()?;
 
         let reply: Vec<u8> =
-            result
+            process(request)
                 .map(|msg| msg )
                 .unwrap_or_else(|e| {
                     println!("{}", e);
@@ -48,6 +33,24 @@ fn main() -> Result<(), Box<dyn std::error::Error + 'static>> {
         let _ = s.send(reply.as_slice()).map_err(|(_, e)| e)?;
     }
     // Ok(())
+}
+
+fn process(req: Message) -> Result<Vec<u8>, Box<dyn std::error::Error>> {
+    let slice = req.as_slice();
+
+    if let Ok(((("src", "=", ego), ("dest", "=", target)), ())) =
+        rmp_serde::from_slice(slice)
+    {
+        mr_node_score(ego, target)
+    } else if let Ok(((("src", "=", ego), ), ())) = rmp_serde::from_slice(slice) {
+        mr_scores(ego)
+    } else if let Ok((((subject, object, amount), ), ())) = rmp_serde::from_slice(slice) {
+        mr_edge(subject, object, amount)
+    } else {
+        let err: String = format!("Error: Cannot understand request {:?}", &req[..]);
+        eprintln!("{}", err);
+        Err(err.into())
+    }
 }
 
 fn mr_node_score(ego: &str, target: &str) -> Result<Vec<u8>, Box<dyn std::error::Error + 'static>> {
