@@ -1,8 +1,9 @@
+use std::slice::Iter;
 use std::thread;
 use std::time::Duration;
 use crate::error::GraphManipulationError;
 use crate::graph::{GraphSingleton, NodeId, GRAPH};
-use crate::lib_graph::Weight;
+use crate::lib_graph::{MyGraph, Weight};
 use nng::{Aio, AioResult, Context, Message, Protocol, Socket};
 
 mod graph; // This module is for graph related operations
@@ -13,6 +14,11 @@ mod error;
 mod lib_graph; // This module contains graph related operations and data structures
 
 const SERVICE_URL: &str = "tcp://127.0.0.1:10234";
+
+fn EMPTY_RESULT() -> Vec<u8> {
+    const EMPTY_ROWS_VEC: Vec<(&str, &str, f64)> = Vec::new();
+    rmp_serde::to_vec(&EMPTY_ROWS_VEC).unwrap()
+}
 
 fn main() -> Result<(), Box<dyn std::error::Error + 'static>> {
     main_async()
@@ -109,6 +115,10 @@ fn process(req: Message) -> Result<Vec<u8>, Box<dyn std::error::Error>> {
         mr_scores(ego)
     } else if let Ok((((subject, object, amount), ), ())) = rmp_serde::from_slice(slice) {
         mr_edge(subject, object, amount)
+    } else if let Ok(((("src", "delete", ego), ("dest", "delete", target)), ())) = rmp_serde::from_slice(slice) {
+        Ok(mr_delete_edge(ego, target).map(|_| EMPTY_RESULT())?)
+    } else if let Ok(((("src", "delete", ego), ), ())) = rmp_serde::from_slice(slice) {
+        Ok(mr_delete_node(ego).map(|_| EMPTY_RESULT())?)
     } else {
         let err: String = format!("Error: Cannot understand request {:?}", &req[..]);
         eprintln!("{}", err);
@@ -178,3 +188,46 @@ fn meritrank_add(
         ))),
     }
 }
+
+fn mr_delete_edge(
+    subject: &str,
+    object: &str,
+) -> Result<(), GraphManipulationError> {
+    // meritrank_add(ego, target, 0)
+    match GRAPH.lock() {
+        Ok(mut graph) => {
+            let subject_id = graph.get_node_id(subject)?;
+            let object_id = graph.get_node_id(object)?;
+
+            graph
+                .borrow_graph_mut()
+                .remove_edge(subject_id.into(), object_id.into());
+            Ok(())
+        }
+        Err(e) => Err(GraphManipulationError::MutexLockFailure(format!(
+            "Mutex lock error: {}",
+            e
+        ))),
+    }
+}
+
+fn mr_delete_node(
+    ego: &str,
+) -> core::result::Result<(), GraphManipulationError> {
+    match GRAPH.lock() {
+        Ok(mut graph) => {
+            let ego_id = graph.get_node_id(ego)?;
+            let graph: &mut MyGraph = graph.borrow_graph_mut();
+            graph
+                .neighbors(ego_id)
+                .iter()
+                .for_each(|n| graph.remove_edge(ego_id.into(), *n));
+            Ok(())
+        }
+        Err(e) => Err(GraphManipulationError::MutexLockFailure(format!(
+            "Mutex lock error: {}",
+            e
+        ))),
+    }
+}
+
