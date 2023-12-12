@@ -129,10 +129,10 @@ impl MeritRank {
     ) -> Option<HashMap<NodeId, Weight>> {
         let neighbors: HashMap<_, _> = self
             .graph
-            .neighbors(node)
+            .neighbors(&node)
             .into_iter()
             .filter_map(|nbr| {
-                let weight = self.graph.edge_weight(node, nbr).unwrap_or_else(|| 0.0);
+                let weight = self.graph.edge_weight(&node, &nbr).unwrap_or_else(|| 0.0);
                 if (positive && weight > 0.0) || (!positive && weight < 0.0) {
                     Some((nbr, weight))
                 } else {
@@ -186,7 +186,7 @@ impl MeritRank {
     /// }
     /// ```
     pub fn calculate(&mut self, ego: NodeId, num_walks: usize) -> Result<(), MeritRankError> {
-        if !self.graph.contains_node(ego) {
+        if !self.graph.contains_node(&ego) {
             return Err(MeritRankError::NodeDoesNotExist);
         }
 
@@ -289,7 +289,7 @@ impl MeritRank {
         let hits = counter.get_count(&target).copied().unwrap_or(0.0);
 
         if ASSERT {
-            let has_path = self.graph.is_connecting(ego, target);
+            let has_path = self.graph.is_connecting(&ego, &target);
 
             if hits > 0.0 && !has_path {
                 return Err(MeritRankError::NoPathExists);
@@ -479,7 +479,7 @@ impl MeritRank {
     ///
     /// The weight of the edge between the source and destination nodes, or `None` if no edge exists.
     pub fn get_edge(&self, src: NodeId, dest: NodeId) -> Option<Weight> {
-        self.graph.edge_weight(src, dest)
+        self.graph.edge_weight(&src, &dest)
     }
 
     /// Updates penalties and negative hits for a specific edge.
@@ -677,7 +677,7 @@ impl MeritRank {
             panic!("Self reference not allowed");
         }
 
-        let old_weight = self.graph.edge_weight(src, dest).unwrap_or(0.0);
+        let old_weight = self.graph.edge_weight(&src, &dest).unwrap_or(0.0);
 
         if old_weight == weight {
             return;
@@ -713,7 +713,7 @@ impl MeritRank {
     fn zp(&mut self, src: NodeId, dest: NodeId, weight: f64) {
         // Clear the penalties resulting from the invalidated walks
         let step_recalc_probability =
-            if OPTIMIZE_INVALIDATION && weight > 0.0 && self.graph.contains_node(src) {
+            if OPTIMIZE_INVALIDATION && weight > 0.0 && self.graph.contains_node(&src) {
                 let g_edges = self
                     .neighbors_weighted(src, true)
                     .unwrap_or_else(HashMap::new);
@@ -754,11 +754,11 @@ impl MeritRank {
         }
 
         if weight == 0.0 {
-            if self.graph.contains_edge(src, dest) {
-                self.graph.remove_edge(src, dest);
+            if self.graph.contains_edge(&src, &dest) {
+                self.graph.remove_edge(&src, &dest);
             }
         } else {
-            self.graph.add_edge(src, dest, weight);
+            self.graph.add_edge(&src, &dest, weight);
         }
 
         for (walk_mut, invalidated_segment) in &mut invalidated_walks {
@@ -803,7 +803,7 @@ impl MeritRank {
                     if walks.len() != *count as usize {
                         assert!(false);
                     }
-                    if *count > 0.0 && weight > 0.0 && !self.graph.is_connecting(*ego, *peer) {
+                    if *count > 0.0 && weight > 0.0 && !self.graph.is_connecting(ego, peer) {
                         assert!(false);
                     }
                 }
@@ -814,7 +814,7 @@ impl MeritRank {
     /// Handles the case where the old weight is zero and the new weight is negative.
     fn zn(&mut self, src: NodeId, dest: NodeId, weight: f64) {
         // Add an edge with the given weight
-        self.graph.add_edge(src, dest, weight);
+        self.graph.add_edge(&src, &dest, weight);
         // Update penalties for the edge
         self.update_penalties_for_edge(src, dest, false);
     }
@@ -844,7 +844,7 @@ impl MeritRank {
         // Clear invalidated walks and update penalties
         self.update_penalties_for_edge(src, dest, true);
         // Remove the edge from the graph
-        self.graph.remove_edge(src, dest);
+        self.graph.remove_edge(&src, &dest);
     }
 
     /// Handles the case where the old weight is negative and the new weight is positive.
