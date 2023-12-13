@@ -1,6 +1,7 @@
 // Standard library imports
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
+use std::rc::Rc;
 
 // External crate imports
 use lazy_static::lazy_static;
@@ -16,10 +17,17 @@ pub use crate::error::GraphManipulationError;
 pub use crate::lib_graph::NodeId;
 use crate::lib_graph::{MeritRank, MyGraph};
 
+use std::borrow::BorrowMut;
+
 // Singleton instance
 lazy_static! {
-    pub static ref GRAPH: Arc<Mutex<GraphSingleton>> = Arc::new(Mutex::new(GraphSingleton::new()));
+    pub static ref GRAPH: Arc<parking_lot::ReentrantMutex<GraphSingleton>> =
+        Arc::new(parking_lot::ReentrantMutex::new(GraphSingleton::new()));
 }
+// see:
+// https://github.com/rust-lang/rust/issues/32260
+// parking_lot::ReentrantMutex
+
 
 #[allow(dead_code)]
 // GraphSingleton structure
@@ -40,22 +48,22 @@ impl GraphSingleton {
 
     /// Get MeritRank object
     pub fn get_rank() -> Result<MeritRank, GraphManipulationError> {
-        match GRAPH.lock() {
-            Ok(graph) => {
-                let merit_rank = MeritRank::new(graph.graph.clone())?;
-                Ok(merit_rank)
-            }
-            Err(e) => Err(GraphManipulationError::MutexLockFailure(format!(
-                "Mutex lock error: {}",
-                e
-            ))),
-        }
+        let lock = GRAPH.lock();
+        let graph =  lock.borrow_graph();
+        let merit_rank = MeritRank::new(graph.clone())?;
+        Ok(merit_rank)
     }
 
     /// Borrow Node Names
     pub fn borrow_node_names(&self) -> &HashMap<String, NodeId> {
         &self.node_names
     }
+
+    /// ???
+    pub fn borrow_me_mut(&mut self) -> &mut GraphSingleton {
+        self
+    }
+
 
     /// Borrow Graph
     pub fn borrow_graph(&self) -> &MyGraph {
@@ -80,13 +88,13 @@ impl GraphSingleton {
     ///
     /// Returns a `GraphManipulationError::MutexLockFailure()` if the mutex lock fails.
     pub fn add_node(node_name: &str) -> Result<NodeId, GraphManipulationError> {
-        match GRAPH.lock() {
-            Ok(mut graph) => graph.get_node_id(node_name),
-            Err(e) => Err(GraphManipulationError::MutexLockFailure(format!(
-                "Mutex lock error: {}",
-                e
-            ))),
-        }
+        /*
+-        match GRAPH.lock() {
+-            Ok(mut graph) => graph.get_node_id(node_name),
+        */
+        let mut lock = GRAPH.lock();
+        lock.borrow_me_mut().get_node_id(node_name)
+        // graph.get_node_id(node_name)
     }
 
     // This method remains largely the same, it's already well structured
@@ -104,56 +112,33 @@ impl GraphSingleton {
 
     /// Returns the name of the node with the given ID.
     pub fn node_name_to_id(node_name: &str) -> Result<NodeId, GraphManipulationError> {
-        match GRAPH.lock() {
-            Ok(graph) => {
-                if let Some(&node_id) = graph.node_names.get(node_name) {
-                    Ok(node_id)
-                } else {
-                    Err(GraphManipulationError::NodeNotFound(format!(
-                        "Node not found: {}",
-                        node_name
-                    )))
-                }
-            }
-            Err(e) => Err(GraphManipulationError::MutexLockFailure(format!(
-                "Mutex lock error: {}",
-                e
-            ))),
+        if let Some(&node_id) = GRAPH.lock().node_names.get(node_name) {
+            Ok(node_id)
+        } else {
+            Err(GraphManipulationError::NodeNotFound(format!(
+                "Node not found: {}",
+                node_name
+            )))
         }
     }
 
     /// Returns the ID of the node with the given name.
     pub fn node_id_to_name(node_id: NodeId) -> Result<String, GraphManipulationError> {
-        match GRAPH.lock() {
-            Ok(graph) => {
-                for (name, id) in graph.node_names.iter() {
-                    if *id == node_id {
-                        return Ok(name.to_string());
-                    }
-                }
-                Err(GraphManipulationError::NodeNotFound(format!(
-                    "Node not found: {}",
-                    node_id
-                )))
+        for (name, id) in GRAPH.lock().node_names.iter() {
+            if *id == node_id {
+                return Ok(name.to_string());
             }
-            Err(e) => Err(GraphManipulationError::MutexLockFailure(format!(
-                "Mutex lock error: {}",
-                e
-            ))),
         }
+        Err(GraphManipulationError::NodeNotFound(format!(
+            "Node not found: {}",
+            node_id
+        )))
     }
 
     pub fn clear_graph() -> Result<(), GraphManipulationError> {
-        match GRAPH.lock() {
-            Ok(mut graph) => {
-                graph.graph.clear();
-                graph.node_names.clear();
-                Ok(())
-            }
-            Err(e) => Err(GraphManipulationError::MutexLockFailure(format!(
-                "Mutex lock error: {}",
-                e
-            ))),
-        }
+        let graph = GRAPH.lock();
+        graph.graph.clear();
+        graph.node_names.clear();
+        Ok(())
     }
 }

@@ -176,21 +176,14 @@ fn meritrank_add(
     object: &str,
     amount: f64,
 ) -> Result<(), GraphManipulationError> {
-    match GRAPH.lock() {
-        Ok(mut graph) => {
-            let subject_id = graph.get_node_id(subject)?;
-            let object_id = graph.get_node_id(object)?;
+    let mut graph = GRAPH.lock();
+    let subject_id = graph.get_node_id(subject)?;
+    let object_id = graph.get_node_id(object)?;
 
-            graph
-                .borrow_graph_mut()
-                .add_edge((&subject_id).into(), (&object_id).into(), amount)?;
-            Ok(())
-        }
-        Err(e) => Err(GraphManipulationError::MutexLockFailure(format!(
-            "Mutex lock error: {}",
-            e
-        ))),
-    }
+    graph
+        .borrow_graph_mut()
+        .add_edge((&subject_id).into(), (&object_id).into(), amount)?;
+    Ok(())
 }
 
 // todo: move into graph.rs
@@ -199,42 +192,28 @@ fn mr_delete_edge(
     object: &str,
 ) -> Result<(), GraphManipulationError> {
     // meritrank_add(ego, target, 0)
-    match GRAPH.lock() {
-        Ok(mut graph) => {
-            let subject_id = graph.get_node_id(subject)?;
-            let object_id = graph.get_node_id(object)?;
+    let mut graph = GRAPH.lock();
+    let subject_id = graph.get_node_id(subject)?;
+    let object_id = graph.get_node_id(object)?;
 
-            graph
-                .borrow_graph_mut()
-                .remove_edge((&subject_id).into(), (&object_id).into());
-            Ok(())
-        }
-        Err(e) => Err(GraphManipulationError::MutexLockFailure(format!(
-            "Mutex lock error: {}",
-            e
-        ))),
-    }
+    graph
+        .borrow_graph_mut()
+        .remove_edge((&subject_id).into(), (&object_id).into());
+    Ok(())
 }
 
 // todo: move into graph.rs
 fn mr_delete_node(
     ego: &str,
 ) -> core::result::Result<(), GraphManipulationError> {
-    match GRAPH.lock() {
-        Ok(mut graph) => {
-            let ego_id = graph.get_node_id(ego)?;
-            let graph: &mut MyGraph = graph.borrow_graph_mut();
-            graph
-                .neighbors(&ego_id)
-                .iter()
-                .for_each(|n| graph.remove_edge((&ego_id).into(), n));
-            Ok(())
-        }
-        Err(e) => Err(GraphManipulationError::MutexLockFailure(format!(
-            "Mutex lock error: {}",
-            e
-        ))),
-    }
+    let mut graph = GRAPH.lock();
+    let ego_id = graph.get_node_id(ego)?;
+    let graph: &mut MyGraph = graph.borrow_graph_mut();
+    graph
+        .neighbors(&ego_id)
+        .iter()
+        .for_each(|n| graph.remove_edge((&ego_id).into(), n));
+    Ok(())
 }
 
 
@@ -323,143 +302,133 @@ fn gravity_graph(
     positive_only: bool,
     limit: usize /* | None */
 ) -> core::result::Result<(Vec<Edge<Weight>>, HashMap<String, Weight>), GraphManipulationError> {
-    match GRAPH.lock() {
-        Ok(mut graph) => {
-            // GRAPH.lock() inside ! dead lock?
-            // see:
-            // https://github.com/rust-lang/rust/issues/32260
-            // parking_lot::ReentrantMutex
-            let mut rank: MeritRank = GraphSingleton::get_rank()?;
+    let graph = GRAPH.lock();
 
-            let mut G: DiGraph<NodeId, Weight> = DiGraph::new();
-            let mut GM: MyGraph = MyGraph::new();
-            let source_graph: &MyGraph = graph.borrow_graph();
+    let rank: MeritRank = GraphSingleton::get_rank()?;
 
-            /*
-            for e in source_graph.all_edges() {
-                let source: NodeIndex = e.source();
-                let target: NodeIndex = e.target();
-                if source==target {
+    let mut G: DiGraph<NodeId, Weight> = DiGraph::new();
+    let mut GM: MyGraph = MyGraph::new();
+    let source_graph: &MyGraph = graph.borrow_graph();
+
+    /*
+    for e in source_graph.all_edges() {
+        let source: NodeIndex = e.source();
+        let target: NodeIndex = e.target();
+        if source==target {
+            continue
+        }
+        let w_ab = e.weight;
+        let a_id: NodeId = source_graph.index2node(source);
+        let b_id: NodeId = source_graph.index2node(target);
+     */
+    // TODO !!!
+    let focus_id: NodeId = GraphSingleton::node_name_to_id(focus)?; // G.get_node_id(focus)?;
+    let v_focus: Vec<(NodeId, NodeId, Weight)> =
+        source_graph.edges(focus_id).into_iter().flatten().collect();
+    for (a_id, b_id, w_ab) in v_focus {
+
+        let b: String = GraphSingleton::node_id_to_name(b_id)?;
+
+        if b.starts_with("U") {
+            if positive_only && rank.get_node_score(a_id, b_id)?<=0f64 {
+                continue
+            }
+            // assert!( self.get_edge(a, b) != None);
+            // G.add_edge(a, b, w_ab);
+            let a_idx = G.add_node(a_id);
+            let b_idx = G.add_node(b_id);
+            G.add_edge(a_idx, b_idx, w_ab);
+        } else if b.starts_with("C") || b.starts_with("B"){
+            // ? # For connections user-> comment | beacon -> user,
+            // ? # convolve those into user->user
+
+            let v_b : Vec<(NodeId, NodeId, Weight)> =
+                source_graph.edges(b_id).into_iter().flatten().collect();
+
+            for (_, c_id, w_bc) in v_b {
+                if positive_only && w_bc<=0.0f64 {
                     continue
                 }
-                let w_ab = e.weight;
-                let a_id: NodeId = source_graph.index2node(source);
-                let b_id: NodeId = source_graph.index2node(target);
-             */
-            // TODO !!!
-            let focus_id: NodeId = GraphSingleton::node_name_to_id(focus)?; // G.get_node_id(focus)?;
-            let v_focus: Vec<(NodeId, NodeId, Weight)> =
-                source_graph.edges(focus_id).into_iter().flatten().collect();
-            for (a_id, b_id, w_ab) in v_focus {
-
-                let b: String = GraphSingleton::node_id_to_name(b_id)?;
-
-                if (b.starts_with("U")) {
-                    if positive_only && rank.get_node_score(a_id, b_id)?<=0f64 {
-                        continue
-                    }
-                    // assert!( self.get_edge(a, b) != None);
-                    // G.add_edge(a, b, w_ab);
-                    let a_idx = G.add_node(a_id);
-                    let b_idx = G.add_node(b_id);
-                    G.add_edge(a_idx, b_idx, w_ab);
-                } else if b.starts_with("C") || b.starts_with("B"){
-                    // ? # For connections user-> comment | beacon -> user,
-                    // ? # convolve those into user->user
-
-                    let v_b : Vec<(NodeId, NodeId, Weight)> =
-                        source_graph.edges(b_id).into_iter().flatten().collect();
-
-                    for (_, c_id, w_bc) in v_b {
-                        if positive_only && w_bc<=0.0f64 {
-                            continue
-                        }
-                        if c_id==a_id || c_id==b_id { // note: c_id==b_id not in Python version !?
-                            continue
-                        }
-
-                        let c: String = GraphSingleton::node_id_to_name(c_id)?;
-                        if !c.starts_with("U") {
-                            continue
-                        }
-                        // let w_ac = self.get_transitive_edge_weight(a, b, c);
-                        // TODO: proper handling of negative edges
-                        // Note that enemy of my enemy is not my friend.
-                        // Though, this is pretty irrelevant for our current case
-                        // where comments can't have outgoing negative edges.
-                        // return w_ab * w_bc * (-1 if w_ab < 0 and w_bc < 0 else 1)
-                        let w_ac: f64 =
-                            w_ab * w_bc * (if w_ab < 0.0f64 && w_bc < 0.0f64 { -1.0f64 } else { 1.0f64 });
-
-                        // G.add_edge(a, c, w_ac);
-                        let a_idx = G.add_node(a_id);
-                        let c_idx = G.add_node(c_id);
-                        G.add_edge(a_idx, c_idx, w_ac);
-                    }
+                if c_id==a_id || c_id==b_id { // note: c_id==b_id not in Python version !?
+                    continue
                 }
+
+                let c: String = GraphSingleton::node_id_to_name(c_id)?;
+                if !c.starts_with("U") {
+                    continue
+                }
+                // let w_ac = self.get_transitive_edge_weight(a, b, c);
+                // TODO: proper handling of negative edges
+                // Note that enemy of my enemy is not my friend.
+                // Though, this is pretty irrelevant for our current case
+                // where comments can't have outgoing negative edges.
+                // return w_ab * w_bc * (-1 if w_ab < 0 and w_bc < 0 else 1)
+                let w_ac: f64 =
+                    w_ab * w_bc * (if w_ab < 0.0f64 && w_bc < 0.0f64 { -1.0f64 } else { 1.0f64 });
+
+                // G.add_edge(a, c, w_ac);
+                let a_idx = G.add_node(a_id);
+                let c_idx = G.add_node(c_id);
+                G.add_edge(a_idx, c_idx, w_ac);
             }
-
-            let ego_id: NodeId = GraphSingleton::node_name_to_id(ego)?;
-
-            // self.remove_outgoing_edges_upto_limit(G, ego, focus, limit or 3):
-            // neighbours = list(dest for src, dest in G.out_edges(focus))
-            let index: NodeIndex = GM.get_node_index(&focus_id).unwrap(); // TODO !!!
-            let dir = petgraph::Direction::Outgoing;
-            let out = G.edges_directed(index, dir).into_iter();
-            let neighbours: Vec<(EdgeIndex, NodeIndex, NodeId)> =
-                out // .out_edges(&focus_id)
-                    .map(|e| (e.id(), e.target()))
-                    .map(|(edge_idx, node_idx)|
-                        (edge_idx, node_idx, source_graph.index2node(node_idx))
-                    )
-                    .collect();
-
-            let mut sorted =
-                neighbours
-                    .iter()
-                    .map(|(edge_index, node_index, node_id)| {
-                        let w: f64 = rank.get_node_score(ego_id, *node_id).unwrap_or(0f64);
-                        (w, (edge_index, node_index))
-                    })
-                    .collect::<Vec<_>>();
-            sorted.sort_by(|a, b| a.partial_cmp(b).unwrap());
-
-            let limited: Vec<&(&EdgeIndex, &NodeIndex)> =
-                sorted.iter().map(|(_, tuple)| tuple).take(limit).collect();
-
-            for (edge_index, node_index) in limited {
-                G.remove_edge(**edge_index);
-                G.remove_node(**node_index);
-            }
-
-            /*
-            for dest in sorted(neighbours, key=lambda x: self.get_node_score(ego, x))[limit:]:
-            G.remove_edge(focus, dest)
-            G.remove_node(dest)
-
-            try:
-                self.add_path_to_graph(G, ego, focus)
-            except nx.exception.NetworkXNoPath:
-            # No path found, so add just the focus node to show at least something
-            G.add_node(focus)
-            */
-
-            // self.remove_self_edges(G);
-
-            let (nodes, edges) = G.into_nodes_edges();
-            let vec: Vec<(String, Weight)> = nodes.iter().map(|n| {
-                let node_id: NodeId = n.weight;
-                let node: String = GraphSingleton::node_id_to_name(node_id)?;
-                let score: Weight = rank.get_node_score(ego_id, node_id)?;
-                Ok::<(String, f64), GraphManipulationError>((node, score))
-            }).collect::<Vec<_>>().into_iter().collect::<Result<Vec<_>,_>>()?;
-            let nodes_dict: HashMap<String, Weight> = vec.into_iter().collect::<HashMap<_,_>>();
-
-            Ok((edges, nodes_dict))
         }
-        Err(e) => Err(GraphManipulationError::MutexLockFailure(format!(
-            "Mutex lock error: {}",
-            e
-        ))),
     }
+
+    let ego_id: NodeId = GraphSingleton::node_name_to_id(ego)?;
+
+    // self.remove_outgoing_edges_upto_limit(G, ego, focus, limit or 3):
+    // neighbours = list(dest for src, dest in G.out_edges(focus))
+    let index: NodeIndex = GM.get_node_index(&focus_id).unwrap(); // TODO !!!
+    let dir = petgraph::Direction::Outgoing;
+    let out = G.edges_directed(index, dir).into_iter();
+    let neighbours: Vec<(EdgeIndex, NodeIndex, NodeId)> =
+        out // .out_edges(&focus_id)
+            .map(|e| (e.id(), e.target()))
+            .map(|(edge_idx, node_idx)|
+                (edge_idx, node_idx, source_graph.index2node(node_idx))
+            )
+            .collect();
+
+    let mut sorted =
+        neighbours
+            .iter()
+            .map(|(edge_index, node_index, node_id)| {
+                let w: f64 = rank.get_node_score(ego_id, *node_id).unwrap_or(0f64);
+                (w, (edge_index, node_index))
+            })
+            .collect::<Vec<_>>();
+    sorted.sort_by(|a, b| a.partial_cmp(b).unwrap());
+
+    let limited: Vec<&(&EdgeIndex, &NodeIndex)> =
+        sorted.iter().map(|(_, tuple)| tuple).take(limit).collect();
+
+    for (edge_index, node_index) in limited {
+        G.remove_edge(**edge_index);
+        G.remove_node(**node_index);
+    }
+
+    /*
+    for dest in sorted(neighbours, key=lambda x: self.get_node_score(ego, x))[limit:]:
+    G.remove_edge(focus, dest)
+    G.remove_node(dest)
+
+    try:
+        self.add_path_to_graph(G, ego, focus)
+    except nx.exception.NetworkXNoPath:
+    # No path found, so add just the focus node to show at least something
+    G.add_node(focus)
+    */
+
+    // self.remove_self_edges(G);
+
+    let (nodes, edges) = G.into_nodes_edges();
+    let vec: Vec<(String, Weight)> = nodes.iter().map(|n| {
+        let node_id: NodeId = n.weight;
+        let node: String = GraphSingleton::node_id_to_name(node_id)?;
+        let score: Weight = rank.get_node_score(ego_id, node_id)?;
+        Ok::<(String, f64), GraphManipulationError>((node, score))
+    }).collect::<Vec<_>>().into_iter().collect::<Result<Vec<_>,_>>()?;
+    let nodes_dict: HashMap<String, Weight> = vec.into_iter().collect::<HashMap<_,_>>();
+
+    Ok((edges, nodes_dict))
 }

@@ -17,6 +17,7 @@ thiserror = "1.0.29"
 serde = "1.0.166"
 regex = "1.9.1"
 
+parking_lot = "0.12.1"
 nng = "1.0.1"
 rmp-serde = "1.1.2"
 
