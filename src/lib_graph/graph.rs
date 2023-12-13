@@ -230,6 +230,11 @@ impl MyGraph {
         self.nodes.clear();
     }
 
+    // TODO
+    pub fn tmp(&self) -> &MyDiGraph {
+        return &self.graph;
+    }
+
     /*
     /// Returns all edges (with weights and NodeIndex/ices)
     pub fn all_edges(&self) -> Vec<Edge<Weight>> {
