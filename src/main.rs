@@ -8,6 +8,7 @@ use crate::error::GraphManipulationError;
 use crate::graph::{GraphSingleton, NodeId, GRAPH};
 use crate::lib_graph::{MeritRank, MyDiGraph, MyGraph, Weight};
 use nng::{Aio, AioResult, Context, Message, Protocol, Socket};
+use itertools::Itertools;
 
 mod graph; // This module is for graph related operations
 // #[cfg(feature = "shared")]
@@ -352,7 +353,7 @@ fn gravity_graph(
                 //let a: String = graph.node_id_to_name_unsafe(a_id)?;
                 let b: String = graph.node_id_to_name_unsafe(b_id)?;
 
-                if (b.starts_with("U")) {
+                if b.starts_with("U") {
                     if positive_only && rank.get_node_score(a_id, b_id)?<=0f64 {
                         continue
                     }
@@ -438,23 +439,33 @@ fn gravity_graph(
                     },
                 Some(path) => {
                     let v3: Vec<&NodeId> = path.iter().take(3).collect::<Vec<&NodeId>>();
-                    // TODO
-                    /*
+                    if let Some((a, b, c)) = v3.clone().into_iter().collect_tuple() {
+                            /*
+                            # merge transitive edges going through comments and beacons
+                            if c is None and not (a.startswith("C") or a.startswith("B")):
+                                new_edge = (a, b, self.get_edge(a, b))
+                            elif b.startswith("C") or b.startswith("B"):
+                                new_edge = (a, c, self.get_transitive_edge_weight(a, b, c))
+                            elif a.startswith("U"):
+                                new_edge = (a, b, self.get_edge(a, b))
 
-                    if let Vec(a, b, c) = v3 {
-
+                            edges.append(new_edge)
+                            */
+                    } else if let Some((a, b, c)) = v3.clone().into_iter().collect_tuple()
+                    {
+                            /*
+                            # Add the final (and only)
+                            final_nodes = ego_to_focus_path[-2:]
+                            final_edge = (*final_nodes, self.get_edge(*final_nodes))
+                            edges.append(final_edge)
+                            */
+                    } else {
+                            // ?
                     }
-
-                    match v3 {
-                        Vec<NodeId>(a, b, c) => (),
-                        Vec<NodeId>(_, b) => ()
-                        _ => ()
-                    }
-                    */
                 }
             }
 
-            if (copy.no_path(&ego_id, &focus_id).unwrap_or(false)) {
+            if copy.no_path(&ego_id, &focus_id).unwrap_or(false) {
                 // No path found, so add just the focus node to show at least something
                 copy.add_node(lib_graph::node::Node::new(focus_id));
             }
