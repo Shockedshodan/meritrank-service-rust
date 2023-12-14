@@ -254,6 +254,7 @@ fn mr_delete_node(
 
 // =====
 use std::collections::HashMap;
+use std::ops::Index;
 use petgraph::data::Element::Node;
 use petgraph::graph::{DiGraph, node_index, EdgeIndex, NodeIndex, edge_index};
 use petgraph::graph::Edge;
@@ -329,32 +330,25 @@ fn mr_gravity_graph(
     Ok("ok".to_string())
 }
 
-
 fn gravity_graph(
-    //&self,
     ego: &str,
     focus: &str,
     positive_only: bool,
     limit: usize /* | None */
-) -> core::result::Result<(Vec<(String, String, Weight)>, HashMap<String, Weight>), GraphManipulationError> {
+) -> Result<(Vec<(String, String, Weight)>, HashMap<String, Weight>), GraphManipulationError> {
     match GRAPH.lock() {
         Ok(mut graph) => {
-            // GRAPH.lock() inside ! dead lock?
-            // see:
-            // https://github.com/rust-lang/rust/issues/32260
-            // parking_lot::ReentrantMutex
-
-            // let mut rank: MeritRank = GraphSingleton::get_rank()?;
             let mut rank: MeritRank = MeritRank::new(graph.borrow_graph().clone())?;
 
-            let mut G: GraphSingleton = GraphSingleton::new(); // MyGraph = MyGraph::new();
+            let mut copy: MyGraph = MyGraph::new();
+            //let mut G: GraphSingleton = GraphSingleton::new(); // MyGraph = MyGraph::new();
             let source_graph: &MyGraph = graph.borrow_graph();
 
             // focus_id in graph
             let focus_id: NodeId = graph.node_name_to_id_unsafe(focus)?;
-            let vf: Vec<(NodeId, NodeId, Weight)> =
+            let focus_vector: Vec<(NodeId, NodeId, Weight)> =
                 source_graph.edges(focus_id).into_iter().flatten().collect();
-            for (a_id, b_id, w_ab) in vf {
+            for (a_id, b_id, w_ab) in focus_vector {
 
                 let a: String = graph.node_id_to_name_unsafe(a_id)?;
                 let b: String = graph.node_id_to_name_unsafe(b_id)?;
@@ -363,12 +357,9 @@ fn gravity_graph(
                     if positive_only && rank.get_node_score(a_id, b_id)?<=0f64 {
                         continue
                     }
-                    // assert!( self.get_edge(a, b) != None);
-                    // G.add_edge(a, b, w_ab);
+                    // assert!( get_edge(a, b) != None);
 
-                    let a_id_copy = G.get_node_id(a.as_str());
-                    let b_id_copy = G.get_node_id(b.as_str());
-                    G.borrow_graph_mut().add_edge(&a_id_copy, &b_id_copy, w_ab)?;
+                    copy.add_edge(&a_id, &b_id, w_ab);
 
                 } else if b.starts_with("C") || b.starts_with("B"){
                     // ? # For connections user-> comment | beacon -> user,
@@ -393,35 +384,25 @@ fn gravity_graph(
                         // let w_ac = self.get_transitive_edge_weight(a, b, c);
                         // TODO: proper handling of negative edges
                         // Note that enemy of my enemy is not my friend.
+                        // Note that enemy of my enemy is not my friend.
+                        // Note that enemy of my enemy is not my friend.
                         // Though, this is pretty irrelevant for our current case
                         // where comments can't have outgoing negative edges.
                         // return w_ab * w_bc * (-1 if w_ab < 0 and w_bc < 0 else 1)
                         let w_ac: f64 =
                             w_ab * w_bc * (if w_ab < 0.0f64 && w_bc < 0.0f64 { -1.0f64 } else { 1.0f64 });
 
-                        let a_id_copy = G.get_node_id(a.as_str());
-                        let c_id_copy = G.get_node_id(c.as_str());
-                        G.borrow_graph_mut().add_edge(&a_id_copy, &c_id_copy, w_ac);
+                        copy.add_edge(&a_id, &c_id, w_ac);
                     }
                 }
             }
 
             // focus_id in G
-            let focus_id: NodeId = G.node_name_to_id_unsafe(focus)?;
+            //let focus_id: NodeId = G.node_name_to_id_unsafe(focus)?;
 
             // self.remove_outgoing_edges_upto_limit(G, ego, focus, limit or 3):
             // neighbours = list(dest for src, dest in G.out_edges(focus))
-            let gg = G.borrow_graph_mut();
-            let index: NodeIndex = gg.get_node_index(&focus_id).unwrap(); // TODO !!!
-            let dir = petgraph::Direction::Outgoing;
-            let out = gg.tmp().edges_directed(index, dir).into_iter(); // todo
-            let neighbours: Vec<(EdgeIndex, NodeIndex, NodeId)> =
-                out // .out_edges(&focus_id)
-                    .map(|e| (e.id(), e.target()))
-                    .map(|(edge_idx, node_idx)|
-                        (edge_idx, node_idx, gg.index2node(node_idx))
-                    )
-                    .collect();
+            let neighbours: Vec<(EdgeIndex, NodeIndex, NodeId)> = copy.outgoing(&focus_id);
 
             // ego_id in graph
             let ego_id: NodeId = graph.node_name_to_id_unsafe(ego)?;
@@ -435,57 +416,61 @@ fn gravity_graph(
                     })
                     .collect::<Vec<_>>();
             sorted.sort_by(|a, b| a.partial_cmp(b).unwrap());
+            //sort by weight
 
+            // for dest in sorted(neighbours, key=lambda x: self.get_node_score(ego, x))[limit:]:
             let limited: Vec<&(&EdgeIndex, &NodeIndex)> =
                 sorted.iter().map(|(_, tuple)| tuple).take(limit).collect();
 
             for (edge_index, node_index) in limited {
-                //gg.remove_edge()
-                //gg.tmp().remove_edge(**edge_index);
-                //gg.tmp().remove_node(**node_index);
-                // TODO
+                let node_id = copy.index2node(**node_index);
+                copy.remove_edge(&ego_id, &node_id);
+                //G.remove_node(dest) // ???
             }
 
             /*
-            for dest in sorted(neighbours, key=lambda x: self.get_node_score(ego, x))[limit:]:
-            G.remove_edge(focus, dest)
-            G.remove_node(dest)
-
             try:
                 self.add_path_to_graph(G, ego, focus)
             except nx.exception.NetworkXNoPath:
             # No path found, so add just the focus node to show at least something
             G.add_node(focus)
             */
+            if (copy.no_path(&ego_id, &focus_id).unwrap_or(false)) {
+                // No path found, so add just the focus node to show at least something
+                copy.add_node(lib_graph::node::Node::new(focus_id));
+            }
 
             // self.remove_self_edges(G);
 
-            let (nodes, edges) = gg.tmp().clone().into_nodes_edges();
-            let vn: Vec<(String, Weight)> =
-                Vec::new();
-            /*
-                nodes.iter().map(|n| {
-                    let node_id: NodeId = n.weight.get_id(); // ?
-                    let node: String = G.node_id_to_name_unsafe(node_id)?;
-                    let score: Weight = rank.get_node_score(ego_id, node_id)?;
-                    Ok::<(String, f64), GraphManipulationError>((node, score))
-                }).collect::<Vec<_>>().into_iter().collect::<Result<Vec<_>,_>>()?;
-            */
+            let (nodes, edges) = copy.all();
 
-            let nodes_dict: HashMap<String, Weight> = vn.into_iter().collect::<HashMap<_,_>>();
+            let table: Vec<(String, String, f64)> =
+                edges
+                    .iter()
+                    .map(|(n1, n2, weight)| {
+                        let name1 = graph.node_id_to_name_unsafe(*n1)?;
+                        let name2 = graph.node_id_to_name_unsafe(*n2)?;
+                        Ok::<(String, String, f64), GraphManipulationError>( (name1, name2, *weight) )
+                    })
+                    .collect::<Vec<_>>()
+                    .into_iter()
+                    .flatten()
+                    .collect::<Vec<_>>();
 
-            let ve: Vec<(String, String, Weight)> =
-                Vec::new();
-            /*
-                edges.iter().map(|e| {
-                    let src_id = gg.index2node(e.source());
-                    let dst_id = gg.index2node(e.target());
-                    let src = G.node_id_to_name_unsafe(src_id).expect("No source name!");
-                    let dst = G.node_id_to_name_unsafe(dst_id).expect("No destination name!");
-                    (src, dst, e.weight)
-                }).collect::<Vec<_>>();
-            */
-            Ok((ve, nodes_dict))
+            let nodes_dict: HashMap<String, Weight> =
+                nodes
+                    .iter()
+                    .map(|node_id| {
+                        let name = graph.node_id_to_name_unsafe(*node_id)?;
+                        let score = rank.get_node_score(ego_id, *node_id)?;
+                        Ok::<(String, Weight), GraphManipulationError>( (name, score) )
+                    })
+                    .collect::<Vec<_>>()
+                    .into_iter()
+                    .flatten()
+                    .collect::<HashMap<String, Weight>>();
+
+            Ok( (table, nodes_dict) )
         }
         Err(e) => Err(GraphManipulationError::MutexLockFailure(format!(
             "Mutex lock error: {}",

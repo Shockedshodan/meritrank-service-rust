@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use petgraph::algo::has_path_connecting;
 use petgraph::Directed;
 use petgraph::graph::{DiGraph, Edge};
-use petgraph::prelude::NodeIndex;
+use petgraph::prelude::{EdgeIndex, NodeIndex};
 
 #[allow(unused_imports)]
 use petgraph::visit::EdgeRef;
@@ -37,6 +37,12 @@ impl MyGraph {
     }
 
     /// Adds a node to the graph and returns its `NodeIndex`.
+    pub fn add_node_by_id(&mut self, node_id: NodeId) -> NodeIndex {
+        // Add a node to the graph and store its NodeIndex in the nodes mapping
+        let index = self.graph.add_node(Node::new(node_id));
+        self.nodes.insert(node_id, index);
+        index
+    }
     pub fn add_node(&mut self, node: Node) -> NodeIndex {
         // Add a node to the graph and store its NodeIndex in the nodes mapping
         let index = self.graph.add_node(node.clone());
@@ -176,6 +182,51 @@ impl MyGraph {
                 Some(collected_edges)
             }
         })
+    }
+
+    pub fn all(&self) -> (Vec<NodeId>, Vec<(NodeId, NodeId, Weight)>) {
+        let (nodes, edges) =
+            self.graph.clone().into_nodes_edges();
+        (
+            nodes
+                .iter()
+                .map(|n| n.weight.get_id())
+                .collect(),
+            edges
+                .iter()
+                .map(|e| {
+                    (self.index2node(e.source()), self.index2node(e.target()), e.weight)
+                })
+                .collect()
+        )
+    }
+
+    pub fn outgoing(&self, focus_id: &NodeId) -> Vec<(EdgeIndex, NodeIndex, NodeId)> {
+        self.get_node_index(focus_id)
+            .map(|focus_index| {
+                self.graph
+                    .edges_directed(focus_index, petgraph::Direction::Outgoing)
+                    .into_iter()
+                    .map(|e|
+                        (e.id(), e.target(), self.index2node(e.target()))
+                    )
+                    .collect()
+            })
+            .unwrap_or_else(Vec::new)
+    }
+
+    pub fn no_path(&self, start: &NodeId, goal: &NodeId) -> Option<bool> {
+        let start_index = self.get_node_index(start)?;
+        let goal_index = self.get_node_index(goal)?;
+        let goal_op = Some(goal_index);
+        let path =
+            petgraph::algo::dijkstra(
+                &self.graph,
+                start_index,
+                goal_op,
+                |eref| { *eref.weight() });
+
+        Some( !path.contains_key(&goal_index) )
     }
 
     /// Checks if there is a path between the two given nodes.
