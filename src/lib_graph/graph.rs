@@ -229,6 +229,26 @@ impl MyGraph {
         Some( !path.contains_key(&goal_index) )
     }
 
+    pub fn shortest_path(&self, start: &NodeId, goal: &NodeId) -> Option<Vec<NodeId>> {
+        let start_index = self.get_node_index(start)?;
+        let goal_index = self.get_node_index(goal)?;
+        let (_, v) =
+            petgraph::algo::astar(
+                &self.graph,
+                start_index,
+                |finish| finish == goal_index,
+                |e| *e.weight(),
+                |_| 0.0f64
+            )?;
+        let result: Vec<NodeId> =
+            v
+            .iter()
+            .map(|idx| self.index2node(*idx))
+            .collect();
+
+        Some(result)
+    }
+
     /// Checks if there is a path between the two given nodes.
     pub fn is_connecting(&self, source: &NodeId, target: &NodeId) -> bool {
         // Check if the source and target nodes have valid NodeIndices in the graph
