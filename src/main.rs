@@ -341,7 +341,6 @@ fn gravity_graph(
             let mut rank: MeritRank = MeritRank::new(graph.borrow_graph().clone())?;
 
             let mut copy: MyGraph = MyGraph::new();
-            //let mut G: GraphSingleton = GraphSingleton::new(); // MyGraph = MyGraph::new();
             let source_graph: &MyGraph = graph.borrow_graph();
 
             // focus_id in graph
@@ -350,7 +349,7 @@ fn gravity_graph(
                 source_graph.edges(focus_id).into_iter().flatten().collect();
             for (a_id, b_id, w_ab) in focus_vector {
 
-                let a: String = graph.node_id_to_name_unsafe(a_id)?;
+                //let a: String = graph.node_id_to_name_unsafe(a_id)?;
                 let b: String = graph.node_id_to_name_unsafe(b_id)?;
 
                 if (b.starts_with("U")) {
@@ -383,8 +382,6 @@ fn gravity_graph(
                         }
                         // let w_ac = self.get_transitive_edge_weight(a, b, c);
                         // TODO: proper handling of negative edges
-                        // Note that enemy of my enemy is not my friend.
-                        // Note that enemy of my enemy is not my friend.
                         // Note that enemy of my enemy is not my friend.
                         // Though, this is pretty irrelevant for our current case
                         // where comments can't have outgoing negative edges.
@@ -435,6 +432,28 @@ fn gravity_graph(
             # No path found, so add just the focus node to show at least something
             G.add_node(focus)
             */
+            match copy.shortest_path(&ego_id, &focus_id) {
+                None => { // No path found, so add just the focus node to show at least something
+                        copy.add_node(lib_graph::node::Node::new(focus_id));
+                    },
+                Some(path) => {
+                    let v3: Vec<&NodeId> = path.iter().take(3).collect::<Vec<&NodeId>>();
+                    // TODO
+                    /*
+
+                    if let Vec(a, b, c) = v3 {
+
+                    }
+
+                    match v3 {
+                        Vec<NodeId>(a, b, c) => (),
+                        Vec<NodeId>(_, b) => ()
+                        _ => ()
+                    }
+                    */
+                }
+            }
+
             if (copy.no_path(&ego_id, &focus_id).unwrap_or(false)) {
                 // No path found, so add just the focus node to show at least something
                 copy.add_node(lib_graph::node::Node::new(focus_id));
