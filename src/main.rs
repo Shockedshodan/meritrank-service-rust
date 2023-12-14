@@ -1,4 +1,4 @@
-use std::slice::Iter;
+//use std::slice::Iter;
 use std::thread;
 use std::time::Duration;
 use std::env::var;
@@ -8,7 +8,13 @@ use crate::error::GraphManipulationError;
 use crate::graph::{GraphSingleton, NodeId, GRAPH};
 use crate::lib_graph::{MeritRank, MyDiGraph, MyGraph, Weight};
 use nng::{Aio, AioResult, Context, Message, Protocol, Socket};
+
 use itertools::Itertools;
+use std::collections::HashMap;
+use std::ops::Index;
+use petgraph::graph::{EdgeIndex, NodeIndex};
+use petgraph::visit::EdgeRef;
+
 
 mod graph; // This module is for graph related operations
 // #[cfg(feature = "shared")]
@@ -135,8 +141,10 @@ fn process(req: Message) -> Result<Vec<u8>, Box<dyn std::error::Error>> {
         Ok(mr_delete_edge(ego, target).map(|_| EMPTY_RESULT.to_vec())?)
     } else if let Ok(((("src", "delete", ego), ), ())) = rmp_serde::from_slice(slice) {
         Ok(mr_delete_node(ego).map(|_| EMPTY_RESULT.to_vec())?)
-    } else if let Ok((ego, focus)) = rmp_serde::from_slice(slice) {
-        Ok(mr_gravity_graph(ego, focus).map(|_| EMPTY_RESULT.to_vec())?)
+    } else if let Ok((ego, "gravity", focus)) = rmp_serde::from_slice(slice) {
+        mr_gravity_graph(ego, focus)
+    } else if let Ok((ego, "gravity_nodes", focus)) = rmp_serde::from_slice(slice) {
+        mr_gravity_nodes(ego, focus)
     } else {
         let err: String = format!("Error: Cannot understand request {:?}", &req[..]);
         eprintln!("{}", err);
@@ -252,83 +260,24 @@ fn mr_delete_node(
     }
 }
 
-
-// =====
-use std::collections::HashMap;
-use std::ops::Index;
-use petgraph::data::Element::Node;
-use petgraph::graph::{DiGraph, node_index, EdgeIndex, NodeIndex, edge_index};
-use petgraph::graph::Edge;
-//use petgraph::graph::EdgeReference;
-use petgraph::visit::EdgeRef;
-
-/*
-fn remove_outgoing_edges_upto_limit(
-    //self,
-    G: DiGraph<_, _>,
-    ego,
-    focus,
-    limit
-) = {
-    neighbours = list(dest for src, dest in G.out_edges(focus))
-
-    for dest in sorted(neighbours, key=lambda x: self.get_node_score(ego, x))[limit:]:
-    G.remove_edge(focus, dest)
-    G.remove_node(dest)
-}
-*/
-
-/*
-fn remove_self_edges(
-    //self,
-    G: DiGraph<_, _>
-) = {
-    for src, dest in list(G.edges()):
-    if src == dest:
-    G.remove_edge(src, dest)
-}
-*/
-
-/*
-def weight_fun(u, v, edge):
-    w = edge['weight']
-    if w > 0:
-        return 1.0 / w
-    return None
-
-   def add_path_to_graph(self, G, ego, focus):
-        if ego == focus:
-            return
-        ego_to_focus_path = nx.dijkstra_path(self._IncrementalMeritRank__graph, ego, focus, weight=weight_fun)
-        ego_to_focus_path.append(None)
-
-        edges = []
-        for a, b, c in zip(ego_to_focus_path, ego_to_focus_path[1:], ego_to_focus_path[2:]):
-            # merge transitive edges going through comments and beacons
-            if c is None and not (a.startswith("C") or a.startswith("B")):
-                new_edge = (a, b, self.get_edge(a, b))
-            elif b.startswith("C") or b.startswith("B"):
-                new_edge = (a, c, self.get_transitive_edge_weight(a, b, c))
-            elif a.startswith("U"):
-                new_edge = (a, b, self.get_edge(a, b))
-
-            edges.append(new_edge)
-        if len(ego_to_focus_path) == 2:
-            # Add the final (and only)
-            final_nodes = ego_to_focus_path[-2:]
-            final_edge = (*final_nodes, self.get_edge(*final_nodes))
-            edges.append(final_edge)
-        G.add_weighted_edges_from(edges)
-
- */
-
 fn mr_gravity_graph(
     //&self,
     ego: &str,
     focus: &str
-) -> core::result::Result<String, GraphManipulationError> {
-    let _ = gravity_graph(ego, focus, false, 3)?;
-    Ok("ok".to_string())
+) -> core::result::Result<Vec<u8>, Box<dyn std::error::Error + 'static>> {
+    let (result, _) = gravity_graph(ego, focus, false, 3)?;
+    let v: Vec<u8> = rmp_serde::to_vec(&result)?;
+    Ok(v)
+}
+
+fn mr_gravity_nodes(
+    //&self,
+    ego: &str,
+    focus: &str
+) -> core::result::Result<Vec<u8>, Box<dyn std::error::Error + 'static>> {
+    let (_, result) = gravity_graph(ego, focus, false, 3)?;
+    let v: Vec<u8> = rmp_serde::to_vec(&result)?;
+    Ok(v)
 }
 
 fn gravity_graph(
@@ -395,9 +344,6 @@ fn gravity_graph(
                 }
             }
 
-            // focus_id in G
-            //let focus_id: NodeId = G.node_name_to_id_unsafe(focus)?;
-
             // self.remove_outgoing_edges_upto_limit(G, ego, focus, limit or 3):
             // neighbours = list(dest for src, dest in G.out_edges(focus))
             let neighbours: Vec<(EdgeIndex, NodeIndex, NodeId)> = copy.outgoing(&focus_id);
@@ -405,7 +351,7 @@ fn gravity_graph(
             // ego_id in graph
             let ego_id: NodeId = graph.node_name_to_id_unsafe(ego)?;
 
-            let mut sorted =
+            let mut sorted: Vec<(Weight, (&EdgeIndex, &NodeIndex))> =
                 neighbours
                     .iter()
                     .map(|(edge_index, node_index, node_id)| {
@@ -426,51 +372,97 @@ fn gravity_graph(
                 //G.remove_node(dest) // ???
             }
 
-            /*
-            try:
-                self.add_path_to_graph(G, ego, focus)
-            except nx.exception.NetworkXNoPath:
-            # No path found, so add just the focus node to show at least something
-            G.add_node(focus)
-            */
-            match copy.shortest_path(&ego_id, &focus_id) {
-                None => { // No path found, so add just the focus node to show at least something
-                        copy.add_node(lib_graph::node::Node::new(focus_id));
-                    },
-                Some(path) => {
-                    let v3: Vec<&NodeId> = path.iter().take(3).collect::<Vec<&NodeId>>();
-                    if let Some((a, b, c)) = v3.clone().into_iter().collect_tuple() {
-                            /*
-                            # merge transitive edges going through comments and beacons
-                            if c is None and not (a.startswith("C") or a.startswith("B")):
-                                new_edge = (a, b, self.get_edge(a, b))
-                            elif b.startswith("C") or b.startswith("B"):
-                                new_edge = (a, c, self.get_transitive_edge_weight(a, b, c))
-                            elif a.startswith("U"):
-                                new_edge = (a, b, self.get_edge(a, b))
+            // add_path_to_graph(G, ego, focus)
+            let path: Vec<NodeId> =
+                copy
+                    .shortest_path(&ego_id, &focus_id)
+                    .unwrap_or(Vec::new());
+            // Note: no loops or "self edges" are expected in the path
+            let ok: Result<(), GraphManipulationError> = {
+                let v3: Vec<&NodeId> = path.iter().take(3).collect::<Vec<&NodeId>>();
+                if let Some((a, b, c)) = v3.clone().into_iter().collect_tuple() {
+                    // # merge transitive edges going through comments and beacons
 
-                            edges.append(new_edge)
-                            */
-                    } else if let Some((a, b, c)) = v3.clone().into_iter().collect_tuple()
-                    {
-                            /*
-                            # Add the final (and only)
-                            final_nodes = ego_to_focus_path[-2:]
-                            final_edge = (*final_nodes, self.get_edge(*final_nodes))
-                            edges.append(final_edge)
-                            */
+                    // ???
+                    /*
+                    if c is None and not (a.startswith("C") or a.startswith("B")):
+                        new_edge = (a, b, self.get_edge(a, b))
+                    elif ... */
+
+                    let a_name = graph.node_id_to_name_unsafe(*a)?;
+                    let b_name = graph.node_id_to_name_unsafe(*b)?;
+                    let c_name = graph.node_id_to_name_unsafe(*c)?;
+                    if b_name.starts_with("C") || b_name.starts_with("B") {
+                        let w_ab =
+                            copy.edge_weight(a, b)
+                                .ok_or(GraphManipulationError::WeightExtractionFailure(
+                                    format!("Cannot extrac tweight from {} to {}",
+                                        a_name, b_name
+                                    )
+                                ))?;
+                        let w_bc =
+                            copy.edge_weight(b, c)
+                                .ok_or(GraphManipulationError::WeightExtractionFailure(
+                                    format!("Cannot extrac tweight from {} to {}",
+                                            a_name, c_name
+                                    )
+                                ))?;
+                        // get_transitive_edge_weight
+                        let w_ac: f64 =
+                            w_ab * w_bc * (if w_ab < 0.0f64 && w_bc < 0.0f64 { -1.0f64 } else { 1.0f64 });
+                        copy.add_edge(a, c, w_ac)?;
+                        Ok(())
+                    } else if a_name.starts_with("U") {
+                        let weight =
+                            copy.edge_weight(a, b)
+                                .ok_or(GraphManipulationError::WeightExtractionFailure(
+                                    format!("Cannot extrac tweight from {} to {}",
+                                            a_name, b_name
+                                    )
+                                ))?;
+                        copy.add_edge(a, b, weight)?;
+                        Ok(())
                     } else {
-                            // ?
+                        Ok(())
                     }
+                } else if let Some((a, b)) = v3.clone().into_iter().collect_tuple()
+                {
+                    /*
+                    # Add the final (and only)
+                    final_nodes = ego_to_focus_path[-2:]
+                    final_edge = (*final_nodes, self.get_edge(*final_nodes))
+                    edges.append(final_edge)
+                    */
+                    // ???
+                    let a_name = graph.node_id_to_name_unsafe(*a)?;
+                    let b_name = graph.node_id_to_name_unsafe(*b)?;
+                    let weight =
+                        copy.edge_weight(a, b)
+                            .ok_or(GraphManipulationError::WeightExtractionFailure(
+                                format!("Cannot extrac tweight from {} to {}",
+                                        a_name, b_name
+                                )
+                            ))?;
+                    copy.add_edge(a, b, weight)?;
+                    Ok(())
+                } else if v3.len()==1 {
+                    // ego == focus ?
+                    // do nothing
+                    Ok(())
+                } else if v3.is_empty() {
+                    // No path found, so add just the focus node to show at least something
+                    copy.add_node(lib_graph::node::Node::new(focus_id));
+                    Ok(())
+                } else {
+                    Err(GraphManipulationError::DataExtractionFailure(
+                        "Should never be here (v3)".to_string()
+                    ))
                 }
-            }
+            };
+            let _ = ok?;
 
-            if copy.no_path(&ego_id, &focus_id).unwrap_or(false) {
-                // No path found, so add just the focus node to show at least something
-                copy.add_node(lib_graph::node::Node::new(focus_id));
-            }
-
-            // self.remove_self_edges(G);
+            // self.remove_self_edges(copy);
+            // todo: just not let them pass into the graph
 
             let (nodes, edges) = copy.all();
 

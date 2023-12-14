@@ -814,7 +814,7 @@ impl MeritRank {
     /// Handles the case where the old weight is zero and the new weight is negative.
     fn zn(&mut self, src: NodeId, dest: NodeId, weight: f64) {
         // Add an edge with the given weight
-        self.graph.add_edge(&src, &dest, weight);
+        let _ = self.graph.add_edge(&src, &dest, weight);
         // Update penalties for the edge
         self.update_penalties_for_edge(src, dest, false);
     }
