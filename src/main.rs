@@ -141,9 +141,9 @@ fn process(req: Message) -> Result<Vec<u8>, Box<dyn std::error::Error>> {
         Ok(mr_delete_edge(ego, target).map(|_| EMPTY_RESULT.to_vec())?)
     } else if let Ok(((("src", "delete", ego), ), ())) = rmp_serde::from_slice(slice) {
         Ok(mr_delete_node(ego).map(|_| EMPTY_RESULT.to_vec())?)
-    } else if let Ok((ego, "gravity", focus)) = rmp_serde::from_slice(slice) {
+    } else if let Ok((((ego, "gravity", focus), ), ())) = rmp_serde::from_slice(slice) {
         mr_gravity_graph(ego, focus)
-    } else if let Ok((ego, "gravity_nodes", focus)) = rmp_serde::from_slice(slice) {
+    } else if let Ok((((ego, "gravity_nodes", focus), ), ())) = rmp_serde::from_slice(slice) {
         mr_gravity_nodes(ego, focus)
     } else {
         let err: String = format!("Error: Cannot understand request {:?}", &req[..]);
@@ -275,7 +275,9 @@ fn mr_gravity_nodes(
     ego: &str,
     focus: &str
 ) -> core::result::Result<Vec<u8>, Box<dyn std::error::Error + 'static>> {
-    let (_, result) = gravity_graph(ego, focus, false, 3)?;
+    // TODO: change HashMap to string pairs here!?
+    let (_, hash_map) = gravity_graph(ego, focus, false, 3)?;
+    let result: Vec<_> = hash_map.iter().collect();
     let v: Vec<u8> = rmp_serde::to_vec(&result)?;
     Ok(v)
 }
