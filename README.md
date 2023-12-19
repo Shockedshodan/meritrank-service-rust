@@ -1,7 +1,7 @@
-# pgmer2serv
-NNG server for pgmer2 with embedded Rust MeritRank engine.
+# MeritRank service (NNG server)
+NNG server for https://github.com/Intersubjective/meritrank-psql-connector with embedded Rust MeritRank engine.
 
-This is an trivial example server for https://github.com/shestero/pgmer2 .
+See also: https://github.com/shestero/pgmer2 .
 
-NB The lib_graph code is taken from
+NB The lib_graph code was originally taken from
 https://github.com/vsradkevich/pg_meritrank/tree/main/src/lib_graph .
