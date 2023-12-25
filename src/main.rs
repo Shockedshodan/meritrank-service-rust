@@ -1,6 +1,9 @@
 use std::slice::Iter;
 use std::thread;
 use std::time::Duration;
+use std::env::var;
+use lazy_static::lazy_static;
+use std::string::ToString;
 use crate::error::GraphManipulationError;
 use crate::graph::{GraphSingleton, NodeId, GRAPH};
 use crate::lib_graph::{MyGraph, Weight};
@@ -13,22 +16,35 @@ mod graph; // This module is for graph related operations
 mod error;
 mod lib_graph; // This module contains graph related operations and data structures
 
-const SERVICE_URL: &str = "tcp://127.0.0.1:10234";
+lazy_static! {
+    static ref SERVICE_URL: String =
+        var("RUST_SERVICE_URL")
+            .unwrap_or("tcp://127.0.0.1:10234".to_string());
 
-fn EMPTY_RESULT() -> Vec<u8> {
-    const EMPTY_ROWS_VEC: Vec<(&str, &str, f64)> = Vec::new();
-    rmp_serde::to_vec(&EMPTY_ROWS_VEC).unwrap()
+    static ref EMPTY_RESULT: Vec<u8> = {
+        const EMPTY_ROWS_VEC: Vec<(&str, &str, f64)> = Vec::new();
+        rmp_serde::to_vec(&EMPTY_ROWS_VEC).unwrap()
+    };
 }
 
+// const PARALLEL: usize = 128;
 fn main() -> Result<(), Box<dyn std::error::Error + 'static>> {
-    main_async()
+    match var("RUST_SERVICE_PARALLEL") {
+        Ok(s) => {
+            let parallel =
+                s.parse()
+                    .expect("Error: RUST_SERVICE_PARALLEL env. isn't a number!");
+            main_async(parallel)
+        },
+        _ => main_sync()
+    }
 }
 
 fn main_sync() -> Result<(), Box<dyn std::error::Error + 'static>> {
-    println!("Starting server at {SERVICE_URL}");
+    println!("Starting server at {}", *SERVICE_URL);
 
     let s = Socket::new(Protocol::Rep0)?;
-    s.listen(SERVICE_URL)?;
+    s.listen(&SERVICE_URL)?;
 
     loop {
         let request: Message = s.recv()?;
@@ -47,14 +63,13 @@ fn main_sync() -> Result<(), Box<dyn std::error::Error + 'static>> {
     // Ok(())
 }
 
-const PARALLEL: usize = 128;
-fn main_async() -> Result<(), Box<dyn std::error::Error + 'static>> {
-    println!("Starting server at {SERVICE_URL}");
+fn main_async(parallel: usize) -> Result<(), Box<dyn std::error::Error + 'static>> {
+    println!("Starting server at {}. PARALLEL={parallel}", *SERVICE_URL);
 
     let s = Socket::new(Protocol::Rep0)?;
 
     // Create all of the worker contexts
-    let workers: Vec<_> = (0..PARALLEL)
+    let workers: Vec<_> = (0..parallel)
         .map(|_| {
             let ctx = Context::new(&s)?;
             let ctx_clone = ctx.clone();
@@ -64,14 +79,14 @@ fn main_async() -> Result<(), Box<dyn std::error::Error + 'static>> {
         .collect::<Result<_, nng::Error>>()?;
 
     // Only after we have the workers do we start listening.
-    s.listen(SERVICE_URL)?;
+    s.listen(&SERVICE_URL)?;
 
     // Now start all of the workers listening.
     for (a, c) in &workers {
         c.recv(a)?;
     }
 
-    thread::sleep(Duration::from_secs(60 * 60 * 24 * 365));
+    thread::sleep(Duration::from_secs(60 * 60 * 24 * 365)); // 1 year
 
     Ok(())
 }
@@ -116,9 +131,9 @@ fn process(req: Message) -> Result<Vec<u8>, Box<dyn std::error::Error>> {
     } else if let Ok((((subject, object, amount), ), ())) = rmp_serde::from_slice(slice) {
         mr_edge(subject, object, amount)
     } else if let Ok(((("src", "delete", ego), ("dest", "delete", target)), ())) = rmp_serde::from_slice(slice) {
-        Ok(mr_delete_edge(ego, target).map(|_| EMPTY_RESULT())?)
+        Ok(mr_delete_edge(ego, target).map(|_| EMPTY_RESULT.to_vec())?)
     } else if let Ok(((("src", "delete", ego), ), ())) = rmp_serde::from_slice(slice) {
-        Ok(mr_delete_node(ego).map(|_| EMPTY_RESULT())?)
+        Ok(mr_delete_node(ego).map(|_| EMPTY_RESULT.to_vec())?)
     } else {
         let err: String = format!("Error: Cannot understand request {:?}", &req[..]);
         eprintln!("{}", err);
