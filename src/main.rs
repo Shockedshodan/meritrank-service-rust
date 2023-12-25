@@ -145,6 +145,8 @@ fn process(req: Message) -> Result<Vec<u8>, Box<dyn std::error::Error>> {
         mr_gravity_graph(ego, focus)
     } else if let Ok((((ego, "gravity_nodes", focus), ), ())) = rmp_serde::from_slice(slice) {
         mr_gravity_nodes(ego, focus)
+    } else if let Ok(("for_beacons_global", ())) = rmp_serde::from_slice(slice) {
+        mr_beacons_global()
     } else {
         let err: String = format!("Error: Cannot understand request {:?}", &req[..]);
         eprintln!("{}", err);
@@ -393,6 +395,7 @@ fn gravity_graph(
                     .shortest_path(&ego_id, &focus_id)
                     .unwrap_or(Vec::new());
             println!("path(from={ego_id}, to={focus_id})={:?}", path);
+            // add_path_to_graph(G, ego, focus)
             // Note: no loops or "self edges" are expected in the path
             let ok: Result<(), GraphManipulationError> = {
                 let v3: Vec<&NodeId> = path.iter().take(3).collect::<Vec<&NodeId>>();
@@ -502,7 +505,7 @@ fn gravity_graph(
                     .flatten()
                     .collect::<Vec<_>>();
 
-            let _ = rank.calculate(ego_id, 10)?;
+            let _ = rank.calculate(ego_id, 10)?; // num_walks ?
             let nodes_dict: HashMap<String, Weight> =
                 nodes
                     .iter()
@@ -521,10 +524,42 @@ fn gravity_graph(
 
             println!("nodes_dict.size={}", nodes_dict.len());
             Ok( (table, nodes_dict) )
-        }
+        },
         Err(e) => Err(GraphManipulationError::MutexLockFailure(format!(
             "Mutex lock error: {}",
             e
-        ))),
+        )))
     }
+}
+
+fn mr_beacons_global() -> core::result::Result<Vec<u8>, Box<dyn std::error::Error + 'static>> {
+    let mut graph = GRAPH.lock()?;
+    let g = graph.borrow_graph();
+    let (_, edges) = g.all(); // not optimal
+    // Note:
+    // Just eat errors in node_id_to_name_unsafe bellow.
+    // Should we pass them out?
+    let result: Vec<_> =
+        edges
+            .iter()
+            .filter(|(ego_id, dest_id, weight)|
+                *weight>0.0 && ego_id!=dest_id
+            )
+            .flat_map(|(ego_id, dest_id, weight)| {
+                let ego = graph.node_id_to_name_unsafe(*ego_id)?;
+                Ok::<(String, &NodeId, &Weight), GraphManipulationError>((ego, dest_id, weight))
+            })
+            .filter(|(ego, dest_id, weight)|
+                ego.starts_with("U")
+            )
+            .flat_map(|(ego, dest_id, weight)| {
+                let dest = graph.node_id_to_name_unsafe(*dest_id)?;
+                Ok::<(String, String, &Weight), GraphManipulationError>((ego, dest, weight))
+            })
+            .filter(|(ego, dest, weight)|
+                dest.starts_with("U")||dest.starts_with("B")
+            )
+            .collect();
+    let v: Vec<u8> = rmp_serde::to_vec(&result)?;
+    Ok(v)
 }

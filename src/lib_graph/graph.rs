@@ -2,7 +2,7 @@ use std::collections::HashMap;
 
 use petgraph::algo::has_path_connecting;
 use petgraph::Directed;
-use petgraph::graph::{DiGraph, Edge};
+use petgraph::graph::{DiGraph, Edge, Edges};
 use petgraph::prelude::{EdgeIndex, NodeIndex};
 
 #[allow(unused_imports)]
@@ -323,20 +323,6 @@ impl MyGraph {
     pub fn tmp(&self) -> &MyDiGraph {
         return &self.graph;
     }
-
-    /*
-    /// Returns all edges (with weights and NodeIndex/ices)
-    pub fn all_edges(&self) -> Vec<Edge<Weight>> {
-        self.graph.clone().into_nodes_edges().1
-    }
-
-    /// out_edges
-    pub fn out_edges(&self, focus: &NodeId) -> petgraph::graph::Edges<Weight, Directed> {
-        let index: NodeIndex = self.nodes[focus];
-        let dir = petgraph::Direction::Outgoing;
-        self.graph.edges_directed(index, dir).into_iter()
-    }
-    */
 
     /// NodeIndex --> NodeId
     pub fn index2node(&self, index: NodeIndex) -> NodeId {
