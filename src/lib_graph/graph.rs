@@ -43,6 +43,9 @@ impl MyGraph {
         self.nodes.insert(node_id, index);
         index
     }
+    pub fn add_node_by_id_if_not_exists(&mut self, node_id: &NodeId) -> NodeIndex {
+        self.get_node_index(node_id).unwrap_or_else(|| self.add_node_by_id(*node_id))
+    }
     pub fn add_node(&mut self, node: Node) -> NodeIndex {
         // Add a node to the graph and store its NodeIndex in the nodes mapping
         let index = self.graph.add_node(node.clone());
@@ -92,6 +95,17 @@ impl MyGraph {
         }
     }
 
+    /// Adds an edge between the two given nodes in the graph AND create nodes if needed.
+    pub fn add_edge_with_nodes(
+        &mut self,
+        source: &NodeId,
+        target: &NodeId,
+        weight: Weight,
+    ) -> Result<(), MeritRankError> {
+        let _ = self.add_node_by_id_if_not_exists(source);
+        let _ = self.add_node_by_id_if_not_exists(target);
+        self.add_edge(source, target, weight)
+    }
     /// Adds an edge between the two given nodes in the graph.
     pub fn add_edge(
         &mut self,
@@ -202,13 +216,17 @@ impl MyGraph {
     }
 
     pub fn outgoing(&self, focus_id: &NodeId) -> Vec<(EdgeIndex, NodeIndex, NodeId)> {
+        println!("outgoing: focus_id={}", focus_id);
         self.get_node_index(focus_id)
             .map(|focus_index| {
+                println!("outgoing: focus_index={:?}", focus_index);
                 self.graph
                     .edges_directed(focus_index, petgraph::Direction::Outgoing)
                     .into_iter()
-                    .map(|e|
-                        (e.id(), e.target(), self.index2node(e.target()))
+                    .map(|e| {
+                            println!("outgoing: e={:?}", e);
+                            (e.id(), e.target(), self.index2node(e.target()))
+                        }
                     )
                     .collect()
             })

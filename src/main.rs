@@ -265,6 +265,7 @@ fn mr_gravity_graph(
     ego: &str,
     focus: &str
 ) -> core::result::Result<Vec<u8>, Box<dyn std::error::Error + 'static>> {
+    println!("mr_gravity_graph({ego}, {focus})");
     let (result, _) = gravity_graph(ego, focus, false, 3)?;
     let v: Vec<u8> = rmp_serde::to_vec(&result)?;
     Ok(v)
@@ -275,6 +276,7 @@ fn mr_gravity_nodes(
     ego: &str,
     focus: &str
 ) -> core::result::Result<Vec<u8>, Box<dyn std::error::Error + 'static>> {
+    println!("mr_gravity_node({ego}, {focus})");
     // TODO: change HashMap to string pairs here!?
     let (_, hash_map) = gravity_graph(ego, focus, false, 3)?;
     let result: Vec<_> = hash_map.iter().collect();
@@ -297,8 +299,11 @@ fn gravity_graph(
 
             // focus_id in graph
             let focus_id: NodeId = graph.node_name_to_id_unsafe(focus)?;
+            println!("focus_id={}", focus_id);
             let focus_vector: Vec<(NodeId, NodeId, Weight)> =
                 source_graph.edges(focus_id).into_iter().flatten().collect();
+
+            println!("gravity_graph: focus_vector.size={}", focus_vector.len());
             for (a_id, b_id, w_ab) in focus_vector {
 
                 //let a: String = graph.node_id_to_name_unsafe(a_id)?;
@@ -310,7 +315,8 @@ fn gravity_graph(
                     }
                     // assert!( get_edge(a, b) != None);
 
-                    copy.add_edge(&a_id, &b_id, w_ab);
+                    copy.add_edge_with_nodes(&a_id, &b_id, w_ab);
+                    println!("copy.add_edge_with_nodes(({a_id}, {b_id}, {w_ab});");
 
                 } else if b.starts_with("C") || b.starts_with("B"){
                     // ? # For connections user-> comment | beacon -> user,
@@ -341,7 +347,8 @@ fn gravity_graph(
                         let w_ac: f64 =
                             w_ab * w_bc * (if w_ab < 0.0f64 && w_bc < 0.0f64 { -1.0f64 } else { 1.0f64 });
 
-                        copy.add_edge(&a_id, &c_id, w_ac);
+                        copy.add_edge_with_nodes(&a_id, &c_id, w_ac);
+                        println!("copy.add_edge_with_nodes(({a_id}, {c_id}, {w_ac});");
                     }
                 }
             }
@@ -349,9 +356,11 @@ fn gravity_graph(
             // self.remove_outgoing_edges_upto_limit(G, ego, focus, limit or 3):
             // neighbours = list(dest for src, dest in G.out_edges(focus))
             let neighbours: Vec<(EdgeIndex, NodeIndex, NodeId)> = copy.outgoing(&focus_id);
+            println!("neighbours.size={}", neighbours.len());
 
             // ego_id in graph
             let ego_id: NodeId = graph.node_name_to_id_unsafe(ego)?;
+            println!("ego_id={}", ego_id);
 
             let mut sorted: Vec<(Weight, (&EdgeIndex, &NodeIndex))> =
                 neighbours
@@ -368,9 +377,13 @@ fn gravity_graph(
             let limited: Vec<&(&EdgeIndex, &NodeIndex)> =
                 sorted.iter().map(|(_, tuple)| tuple).take(limit).collect();
 
+            println!("sorted.size={}", sorted.len());
+            println!("limited.size={}", limited.len());
+
             for (edge_index, node_index) in limited {
                 let node_id = copy.index2node(**node_index);
                 copy.remove_edge(&ego_id, &node_id);
+                println!("copy.remove_edge({ego_id}, {node_id})");
                 //G.remove_node(dest) // ???
             }
 
@@ -379,6 +392,7 @@ fn gravity_graph(
                 copy
                     .shortest_path(&ego_id, &focus_id)
                     .unwrap_or(Vec::new());
+            println!("path(from={ego_id}, to={focus_id})={:?}", path);
             // Note: no loops or "self edges" are expected in the path
             let ok: Result<(), GraphManipulationError> = {
                 let v3: Vec<&NodeId> = path.iter().take(3).collect::<Vec<&NodeId>>();
@@ -398,30 +412,32 @@ fn gravity_graph(
                         let w_ab =
                             copy.edge_weight(a, b)
                                 .ok_or(GraphManipulationError::WeightExtractionFailure(
-                                    format!("Cannot extrac tweight from {} to {}",
+                                    format!("Cannot extract tweight from {} to {}",
                                         a_name, b_name
                                     )
                                 ))?;
                         let w_bc =
                             copy.edge_weight(b, c)
                                 .ok_or(GraphManipulationError::WeightExtractionFailure(
-                                    format!("Cannot extrac tweight from {} to {}",
+                                    format!("Cannot extract tweight from {} to {}",
                                             a_name, c_name
                                     )
                                 ))?;
                         // get_transitive_edge_weight
                         let w_ac: f64 =
                             w_ab * w_bc * (if w_ab < 0.0f64 && w_bc < 0.0f64 { -1.0f64 } else { 1.0f64 });
+                        println!("[0] copy.add_edge({a}, {c}, {w_ac}) (try)");
                         copy.add_edge(a, c, w_ac)?;
                         Ok(())
                     } else if a_name.starts_with("U") {
                         let weight =
                             copy.edge_weight(a, b)
                                 .ok_or(GraphManipulationError::WeightExtractionFailure(
-                                    format!("Cannot extrac tweight from {} to {}",
+                                    format!("Cannot extract tweight from {} to {}",
                                             a_name, b_name
                                     )
                                 ))?;
+                        println!("[1] copy.add_edge({a}, {b}, {weight}) (try)");
                         copy.add_edge(a, b, weight)?;
                         Ok(())
                     } else {
@@ -441,10 +457,11 @@ fn gravity_graph(
                     let weight =
                         copy.edge_weight(a, b)
                             .ok_or(GraphManipulationError::WeightExtractionFailure(
-                                format!("Cannot extrac tweight from {} to {}",
+                                format!("Cannot extract tweight from {} to {}",
                                         a_name, b_name
                                 )
                             ))?;
+                    println!("[2] copy.add_edge({a}, {b}, {weight}) (try)");
                     copy.add_edge(a, b, weight)?;
                     Ok(())
                 } else if v3.len()==1 {
@@ -453,7 +470,9 @@ fn gravity_graph(
                     Ok(())
                 } else if v3.is_empty() {
                     // No path found, so add just the focus node to show at least something
-                    copy.add_node(lib_graph::node::Node::new(focus_id));
+                    let node = lib_graph::node::Node::new(focus_id);
+                    copy.add_node(node);
+                    println!("copy.add_node({focus_id}) (by node)");
                     Ok(())
                 } else {
                     Err(GraphManipulationError::DataExtractionFailure(
@@ -467,6 +486,8 @@ fn gravity_graph(
             // todo: just not let them pass into the graph
 
             let (nodes, edges) = copy.all();
+            println!("copy.nodes.size={}", nodes.len());
+            println!("copy.edges.size={}", edges.len());
 
             let table: Vec<(String, String, f64)> =
                 edges
@@ -481,10 +502,14 @@ fn gravity_graph(
                     .flatten()
                     .collect::<Vec<_>>();
 
+            let _ = rank.calculate(ego_id, 10)?;
             let nodes_dict: HashMap<String, Weight> =
                 nodes
                     .iter()
                     .map(|node_id| {
+                        let test1 = graph.node_id_to_name_unsafe(*node_id);
+                        let test2 = rank.get_node_score(ego_id, *node_id);
+                        println!("\tnode_id={node_id}, test1={:?}, test2={:?}", test1, test2);
                         let name = graph.node_id_to_name_unsafe(*node_id)?;
                         let score = rank.get_node_score(ego_id, *node_id)?;
                         Ok::<(String, Weight), GraphManipulationError>( (name, score) )
@@ -494,6 +519,7 @@ fn gravity_graph(
                     .flatten()
                     .collect::<HashMap<String, Weight>>();
 
+            println!("nodes_dict.size={}", nodes_dict.len());
             Ok( (table, nodes_dict) )
         }
         Err(e) => Err(GraphManipulationError::MutexLockFailure(format!(
