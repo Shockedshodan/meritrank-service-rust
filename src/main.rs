@@ -28,6 +28,18 @@ lazy_static! {
         var("RUST_SERVICE_URL")
             .unwrap_or("tcp://127.0.0.1:10234".to_string());
 
+    static ref GRAVITY_NUM_WALK: usize =
+        var("GRAVITY_NUM_WALK")
+            .ok()
+            .and_then(|s| s.parse::<usize>().ok())
+            .unwrap_or(10000);
+
+    static ref WEIGHT_MIN_LEVEL: Weight =
+        var("WEIGHT_MIN_LEVEL")
+            .ok()
+            .and_then(|s| s.parse::<Weight>().ok())
+            .unwrap_or(1.0);
+
     static ref EMPTY_RESULT: Vec<u8> = {
         const EMPTY_ROWS_VEC: Vec<(&str, &str, f64)> = Vec::new();
         rmp_serde::to_vec(&EMPTY_ROWS_VEC).unwrap()
@@ -415,14 +427,14 @@ fn gravity_graph(
                         let w_ab =
                             copy.edge_weight(a, b)
                                 .ok_or(GraphManipulationError::WeightExtractionFailure(
-                                    format!("Cannot extract tweight from {} to {}",
+                                    format!("Cannot extract weight from {} to {}",
                                         a_name, b_name
                                     )
                                 ))?;
                         let w_bc =
                             copy.edge_weight(b, c)
                                 .ok_or(GraphManipulationError::WeightExtractionFailure(
-                                    format!("Cannot extract tweight from {} to {}",
+                                    format!("Cannot extract weight from {} to {}",
                                             a_name, c_name
                                     )
                                 ))?;
@@ -436,7 +448,7 @@ fn gravity_graph(
                         let weight =
                             copy.edge_weight(a, b)
                                 .ok_or(GraphManipulationError::WeightExtractionFailure(
-                                    format!("Cannot extract tweight from {} to {}",
+                                    format!("Cannot extract weight from {} to {}",
                                             a_name, b_name
                                     )
                                 ))?;
@@ -460,7 +472,7 @@ fn gravity_graph(
                     let weight =
                         copy.edge_weight(a, b)
                             .ok_or(GraphManipulationError::WeightExtractionFailure(
-                                format!("Cannot extract tweight from {} to {}",
+                                format!("Cannot extract weight from {} to {}",
                                         a_name, b_name
                                 )
                             ))?;
@@ -505,7 +517,6 @@ fn gravity_graph(
                     .flatten()
                     .collect::<Vec<_>>();
 
-            let _ = rank.calculate(ego_id, 10)?; // num_walks ?
             let nodes_dict: HashMap<String, Weight> =
                 nodes
                     .iter()
@@ -514,7 +525,12 @@ fn gravity_graph(
                         let test2 = rank.get_node_score(ego_id, *node_id);
                         println!("\tnode_id={node_id}, test1={:?}, test2={:?}", test1, test2);
                         let name = graph.node_id_to_name_unsafe(*node_id)?;
-                        let score = rank.get_node_score(ego_id, *node_id)?;
+                        let score =
+                            rank.get_node_score(ego_id, *node_id)
+                                .or_else(|_| {
+                                    let _ = rank.calculate(ego_id, *GRAVITY_NUM_WALK)?;
+                                    rank.get_node_score(ego_id, *node_id)
+                                })?;
                         Ok::<(String, Weight), GraphManipulationError>( (name, score) )
                     })
                     .collect::<Vec<_>>()
@@ -543,7 +559,8 @@ fn mr_beacons_global() -> core::result::Result<Vec<u8>, Box<dyn std::error::Erro
         edges
             .iter()
             .filter(|(ego_id, dest_id, weight)|
-                *weight>0.0 && ego_id!=dest_id
+                *weight>*WEIGHT_MIN_LEVEL && ego_id!=dest_id
+                // Todo: filter if ego or dest is Zero here (?)
             )
             .flat_map(|(ego_id, dest_id, weight)| {
                 let ego = graph.node_id_to_name_unsafe(*ego_id)?;
