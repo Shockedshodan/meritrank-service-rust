@@ -85,6 +85,9 @@ fn top_nodes() -> Vec<(String, f64)> {
     let mut pr = Pagerank::<&String>::new();
     reduced
         .iter()
+        .filter(|(source, target, _weight)|
+            *source!=*ZERO_NODE && *target!=*ZERO_NODE
+        )
         .for_each(|(source, target, _weight)| {
             // TODO: check weight
             pr.add_edge(source, target);
