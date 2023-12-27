@@ -549,9 +549,11 @@ fn gravity_graph(
 }
 
 fn mr_beacons_global() -> core::result::Result<Vec<u8>, Box<dyn std::error::Error + 'static>> {
+    println!("mr_beacons_global() called");
     let mut graph = GRAPH.lock()?;
     let g = graph.borrow_graph();
     let (_, edges) = g.all(); // not optimal
+    println!("mr_beacons_global: total {} edges.", edges.len());
     // Note:
     // Just eat errors in node_id_to_name_unsafe bellow.
     // Should we pass them out?
@@ -577,6 +579,7 @@ fn mr_beacons_global() -> core::result::Result<Vec<u8>, Box<dyn std::error::Erro
                 dest.starts_with("U")||dest.starts_with("B")
             )
             .collect();
+    println!("mr_beacons_global: filtered {} edges.", result.len());
     let v: Vec<u8> = rmp_serde::to_vec(&result)?;
     Ok(v)
 }

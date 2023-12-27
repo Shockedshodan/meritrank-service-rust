@@ -1,6 +1,4 @@
 use std::env::var;
-use std::iter::Take;
-use std::slice::Iter;
 use lazy_static::lazy_static;
 use nng::{Message, Protocol, Socket};
 use serde::Deserialize;
@@ -77,9 +75,14 @@ fn mr_edge(
 }
 
 fn top_nodes() -> Vec<(String, f64)> {
-    let reduced =
+    let reduced: Vec<_> =
         get_reduced_graph()
             .expect("Cannot get reduced graph!");
+
+    if reduced.is_empty() {
+        eprintln!("Warning: reduced graph empty!");
+        return Vec::new();
+    }
 
     // PageRank
     let mut pr = Pagerank::<&String>::new();
@@ -114,10 +117,18 @@ fn main() {
     println!("Zero node recalculation");
     println!("Using service at {}", *SERVICE_URL);
 
-    // delete
+    let nodes: Vec<(String, f64)> = top_nodes();
+    if nodes.is_empty() {
+        eprintln!("Top nodes are empty! Stop.");
+        return;
+    }
+
+    // delete old Zero edges
+    println!("Deleting old Zero edges...");
     delete_from_zero().expect("Cannot delete old edges from Zero!");
 
-    let nodes = top_nodes();
+    // create new Zero edges
+    println!("Creating new Zero {} edges...", nodes.len());
     nodes
         .iter()
         .for_each(|(node, score)| {
