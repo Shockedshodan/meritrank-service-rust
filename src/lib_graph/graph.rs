@@ -319,11 +319,6 @@ impl MyGraph {
         self.nodes.clear();
     }
 
-    // TODO
-    pub fn tmp(&self) -> &MyDiGraph {
-        return &self.graph;
-    }
-
     /// NodeIndex --> NodeId
     pub fn index2node(&self, index: NodeIndex) -> NodeId {
         self.graph[index].get_id() // "syntax index"
