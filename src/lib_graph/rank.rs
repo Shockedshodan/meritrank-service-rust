@@ -81,9 +81,9 @@ impl MeritRank {
     }
 
     // Get the hit count for a specific node
-    pub fn get_hit_counts(&self, node: &NodeId) -> Option<f64> {
+    pub fn get_hit_counts(&self, node: NodeId) -> Option<f64> {
         self.personal_hits
-            .get(node)
+            .get(&node)
             .and_then(|counter| counter.get_count(node))
             .map(|&count| count as f64)
     }
@@ -129,10 +129,13 @@ impl MeritRank {
     ) -> Option<HashMap<NodeId, Weight>> {
         let neighbors: HashMap<_, _> = self
             .graph
-            .neighbors(&node)
+            .neighbors(node)
             .into_iter()
             .filter_map(|nbr| {
-                let weight = self.graph.edge_weight(&node, &nbr).unwrap_or_else(|| 0.0);
+                let weight =
+                    self.graph
+                        .edge_weight(node, nbr)
+                        .unwrap_or_else(|| 0.0);
                 if (positive && weight > 0.0) || (!positive && weight < 0.0) {
                     Some((nbr, weight))
                 } else {
@@ -186,7 +189,7 @@ impl MeritRank {
     /// }
     /// ```
     pub fn calculate(&mut self, ego: NodeId, num_walks: usize) -> Result<(), MeritRankError> {
-        if !self.graph.contains_node(&ego) {
+        if !self.graph.contains_node(ego) {
             return Err(MeritRankError::NodeDoesNotExist);
         }
 
@@ -208,7 +211,9 @@ impl MeritRank {
 
             self.personal_hits
                 .entry(ego)
-                .and_modify(|counter| counter.increment_unique_counts(walk_steps));
+                .and_modify(
+                    |counter| counter.increment_unique_counts(walk_steps)
+                );
 
             self.update_negative_hits(&walk, &mut negs, false);
             self.add_walk(walk, 0);
@@ -286,10 +291,10 @@ impl MeritRank {
             .get(&ego)
             .ok_or(MeritRankError::NodeDoesNotCalculated)?;
 
-        let hits = counter.get_count(&target).copied().unwrap_or(0.0);
+        let hits = counter.get_count(target).copied().unwrap_or(0.0);
 
         if ASSERT {
-            let has_path = self.graph.is_connecting(&ego, &target);
+            let has_path = self.graph.is_connecting(ego, target);
 
             if hits > 0.0 && !has_path {
                 return Err(MeritRankError::NoPathExists);
@@ -479,7 +484,7 @@ impl MeritRank {
     ///
     /// The weight of the edge between the source and destination nodes, or `None` if no edge exists.
     pub fn get_edge(&self, src: NodeId, dest: NodeId) -> Option<Weight> {
-        self.graph.edge_weight(&src, &dest)
+        self.graph.edge_weight(src, dest)
     }
 
     /// Updates penalties and negative hits for a specific edge.
@@ -510,7 +515,9 @@ impl MeritRank {
         };
 
         // Update penalties and negative hits for each affected walk
-        let ego_neg_hits = self.neg_hits.entry(src).or_insert_with(HashMap::new);
+        let ego_neg_hits =
+            self.neg_hits.entry(src)
+                .or_insert_with(HashMap::new);
 
         // Create a hashmap with the negative weight of the edge for the affected node
         let neg_weights: HashMap<NodeId, Weight> = [(dest, weight)].iter().cloned().collect();
@@ -547,7 +554,9 @@ impl MeritRank {
         let ego = walk.first_node().unwrap();
 
         // Get or insert the hit counter for the starting node
-        let counter: &mut Counter = self.personal_hits.entry(ego).or_insert_with(Counter::new);
+        let counter: &mut Counter =
+            self.personal_hits.entry(ego)
+                .or_insert_with(Counter::new);
 
         // Subtract the nodes in the invalidated segment from the hit counter
         let to_remove: HashSet<&NodeId> = invalidated_segment
@@ -556,7 +565,7 @@ impl MeritRank {
             .collect();
 
         if to_remove.len() > 0 {
-            for node_to_remove in to_remove {
+            for &node_to_remove in to_remove {
                 *counter.get_mut_count(node_to_remove) -= 1.0;
             }
 
@@ -637,7 +646,9 @@ impl MeritRank {
         }
 
         // Update the personal hits counter for the new segment
-        let counter: &mut Counter = self.personal_hits.entry(ego).or_insert_with(Counter::new);
+        let counter: &mut Counter =
+            self.personal_hits.entry(ego)
+                .or_insert_with(Counter::new);
         let node_set: HashSet<_> = new_segment.iter().cloned().collect();
         let diff: HashSet<_> = node_set
             .difference(&walk.get_nodes().iter().cloned().collect())
@@ -677,7 +688,10 @@ impl MeritRank {
             panic!("Self reference not allowed");
         }
 
-        let old_weight = self.graph.edge_weight(&src, &dest).unwrap_or(0.0);
+        let old_weight =
+            self.graph
+                .edge_weight(src, dest)
+                .unwrap_or(0.0);
 
         if old_weight == weight {
             return;
@@ -713,7 +727,7 @@ impl MeritRank {
     fn zp(&mut self, src: NodeId, dest: NodeId, weight: f64) {
         // Clear the penalties resulting from the invalidated walks
         let step_recalc_probability =
-            if OPTIMIZE_INVALIDATION && weight > 0.0 && self.graph.contains_node(&src) {
+            if OPTIMIZE_INVALIDATION && weight > 0.0 && self.graph.contains_node(src) {
                 let g_edges = self
                     .neighbors_weighted(src, true)
                     .unwrap_or_else(HashMap::new);
@@ -754,11 +768,11 @@ impl MeritRank {
         }
 
         if weight == 0.0 {
-            if self.graph.contains_edge(&src, &dest) {
-                self.graph.remove_edge(&src, &dest);
+            if self.graph.contains_edge(src, dest) {
+                self.graph.remove_edge(src, dest);
             }
         } else {
-            self.graph.add_edge(&src, &dest, weight);
+            self.graph.add_edge(src, dest, weight);
         }
 
         for (walk_mut, invalidated_segment) in &mut invalidated_walks {
@@ -794,16 +808,16 @@ impl MeritRank {
         self.walks.implement_changes(invalidated_walks);
 
         if ASSERT {
-            for (ego, hits) in &self.personal_hits {
-                for (peer, count) in hits {
-                    let walks = self.walks.get_walks_through_node(*peer, |_| true);
+            for (&ego, hits) in &self.personal_hits {
+                for (&peer, &count) in hits {
+                    let walks = self.walks.get_walks_through_node(peer, |_| true);
                     if VERBOSE {
-                        println!("Peer: {:?}, Count: {:?}, Walks: {:?}", *peer, *count as usize, walks.len());
+                        println!("Peer: {:?}, Count: {:?}, Walks: {:?}", peer, count as usize, walks.len());
                     }
-                    if walks.len() != *count as usize {
+                    if walks.len() != count as usize {
                         assert!(false);
                     }
-                    if *count > 0.0 && weight > 0.0 && !self.graph.is_connecting(ego, peer) {
+                    if count > 0.0 && weight > 0.0 && !self.graph.is_connecting(ego, peer) {
                         assert!(false);
                     }
                 }
@@ -814,7 +828,7 @@ impl MeritRank {
     /// Handles the case where the old weight is zero and the new weight is negative.
     fn zn(&mut self, src: NodeId, dest: NodeId, weight: f64) {
         // Add an edge with the given weight
-        let _ = self.graph.add_edge(&src, &dest, weight);
+        let _ = self.graph.add_edge(src, dest, weight);
         // Update penalties for the edge
         self.update_penalties_for_edge(src, dest, false);
     }
@@ -844,7 +858,7 @@ impl MeritRank {
         // Clear invalidated walks and update penalties
         self.update_penalties_for_edge(src, dest, true);
         // Remove the edge from the graph
-        self.graph.remove_edge(&src, &dest);
+        self.graph.remove_edge(src, dest);
     }
 
     /// Handles the case where the old weight is negative and the new weight is positive.

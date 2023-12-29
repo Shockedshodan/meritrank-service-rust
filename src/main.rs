@@ -1,4 +1,3 @@
-//use std::slice::Iter;
 use std::thread;
 use std::time::Duration;
 use std::env::var;
@@ -220,7 +219,7 @@ fn meritrank_add(
 
             graph
                 .borrow_graph_mut()
-                .add_edge((&subject_id).into(), (&object_id).into(), amount)?;
+                .add_edge(subject_id.into(), object_id.into(), amount)?;
             Ok(())
         }
         Err(e) => Err(GraphManipulationError::MutexLockFailure(format!(
@@ -243,7 +242,7 @@ fn mr_delete_edge(
 
             graph
                 .borrow_graph_mut()
-                .remove_edge((&subject_id).into(), (&object_id).into());
+                .remove_edge(subject_id.into(), object_id.into());
             Ok(())
         }
         Err(e) => Err(GraphManipulationError::MutexLockFailure(format!(
@@ -262,9 +261,9 @@ fn mr_delete_node(
             let ego_id = graph.get_node_id(ego);
             let graph: &mut MyGraph = graph.borrow_graph_mut();
             graph
-                .neighbors(&ego_id)
+                .neighbors(ego_id)
                 .iter()
-                .for_each(|n| graph.remove_edge((&ego_id).into(), n));
+                .for_each(|&n| graph.remove_edge(ego_id.into(), n));
             Ok(())
         }
         Err(e) => Err(GraphManipulationError::MutexLockFailure(format!(
@@ -329,7 +328,7 @@ fn gravity_graph(
                     }
                     // assert!( get_edge(a, b) != None);
 
-                    copy.add_edge_with_nodes(&a_id, &b_id, w_ab);
+                    copy.add_edge_with_nodes(a_id, b_id, w_ab);
                     println!("copy.add_edge_with_nodes(({a_id}, {b_id}, {w_ab});");
 
                 } else if b.starts_with("C") || b.starts_with("B"){
@@ -361,7 +360,7 @@ fn gravity_graph(
                         let w_ac: f64 =
                             w_ab * w_bc * (if w_ab < 0.0f64 && w_bc < 0.0f64 { -1.0f64 } else { 1.0f64 });
 
-                        copy.add_edge_with_nodes(&a_id, &c_id, w_ac);
+                        copy.add_edge_with_nodes(a_id, c_id, w_ac);
                         println!("copy.add_edge_with_nodes(({a_id}, {c_id}, {w_ac});");
                     }
                 }
@@ -369,7 +368,7 @@ fn gravity_graph(
 
             // self.remove_outgoing_edges_upto_limit(G, ego, focus, limit or 3):
             // neighbours = list(dest for src, dest in G.out_edges(focus))
-            let neighbours: Vec<(EdgeIndex, NodeIndex, NodeId)> = copy.outgoing(&focus_id);
+            let neighbours: Vec<(EdgeIndex, NodeIndex, NodeId)> = copy.outgoing(focus_id);
             println!("neighbours.size={}", neighbours.len());
 
             // ego_id in graph
@@ -396,7 +395,7 @@ fn gravity_graph(
 
             for (edge_index, node_index) in limited {
                 let node_id = copy.index2node(**node_index);
-                copy.remove_edge(&ego_id, &node_id);
+                copy.remove_edge(ego_id, node_id);
                 println!("copy.remove_edge({ego_id}, {node_id})");
                 //G.remove_node(dest) // ???
             }
@@ -404,14 +403,14 @@ fn gravity_graph(
             // add_path_to_graph(G, ego, focus)
             let path: Vec<NodeId> =
                 copy
-                    .shortest_path(&ego_id, &focus_id)
+                    .shortest_path(ego_id, focus_id)
                     .unwrap_or(Vec::new());
             println!("path(from={ego_id}, to={focus_id})={:?}", path);
             // add_path_to_graph(G, ego, focus)
             // Note: no loops or "self edges" are expected in the path
             let ok: Result<(), GraphManipulationError> = {
                 let v3: Vec<&NodeId> = path.iter().take(3).collect::<Vec<&NodeId>>();
-                if let Some((a, b, c)) = v3.clone().into_iter().collect_tuple() {
+                if let Some((&a, &b, &c)) = v3.clone().into_iter().collect_tuple() {
                     // # merge transitive edges going through comments and beacons
 
                     // ???
@@ -420,9 +419,9 @@ fn gravity_graph(
                         new_edge = (a, b, self.get_edge(a, b))
                     elif ... */
 
-                    let a_name = graph.node_id_to_name_unsafe(*a)?;
-                    let b_name = graph.node_id_to_name_unsafe(*b)?;
-                    let c_name = graph.node_id_to_name_unsafe(*c)?;
+                    let a_name = graph.node_id_to_name_unsafe(a)?;
+                    let b_name = graph.node_id_to_name_unsafe(b)?;
+                    let c_name = graph.node_id_to_name_unsafe(c)?;
                     if b_name.starts_with("C") || b_name.starts_with("B") {
                         let w_ab =
                             copy.edge_weight(a, b)
@@ -458,7 +457,7 @@ fn gravity_graph(
                     } else {
                         Ok(())
                     }
-                } else if let Some((a, b)) = v3.clone().into_iter().collect_tuple()
+                } else if let Some((&a, &b)) = v3.clone().into_iter().collect_tuple()
                 {
                     /*
                     # Add the final (and only)
@@ -467,8 +466,8 @@ fn gravity_graph(
                     edges.append(final_edge)
                     */
                     // ???
-                    let a_name = graph.node_id_to_name_unsafe(*a)?;
-                    let b_name = graph.node_id_to_name_unsafe(*b)?;
+                    let a_name = graph.node_id_to_name_unsafe(a)?;
+                    let b_name = graph.node_id_to_name_unsafe(b)?;
                     let weight =
                         copy.edge_weight(a, b)
                             .ok_or(GraphManipulationError::WeightExtractionFailure(

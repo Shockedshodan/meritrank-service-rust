@@ -1,14 +1,12 @@
 use std::collections::HashMap;
 
 use petgraph::algo::has_path_connecting;
-use petgraph::Directed;
-use petgraph::graph::{DiGraph, Edge, Edges};
+use petgraph::graph::DiGraph;
 use petgraph::prelude::{EdgeIndex, NodeIndex};
 
 #[allow(unused_imports)]
 use petgraph::visit::EdgeRef;
 
-// use crate::lib_graph::{MeritRankError, NodeId, Weight, Node};
 use crate::lib_graph::errors::MeritRankError;
 use crate::lib_graph::node::{Node, NodeId, Weight};
 
@@ -43,8 +41,8 @@ impl MyGraph {
         self.nodes.insert(node_id, index);
         index
     }
-    pub fn add_node_by_id_if_not_exists(&mut self, node_id: &NodeId) -> NodeIndex {
-        self.get_node_index(node_id).unwrap_or_else(|| self.add_node_by_id(*node_id))
+    pub fn add_node_by_id_if_not_exists(&mut self, node_id: NodeId) -> NodeIndex {
+        self.get_node_index(node_id).unwrap_or_else(|| self.add_node_by_id(node_id))
     }
     pub fn add_node(&mut self, node: Node) -> NodeIndex {
         // Add a node to the graph and store its NodeIndex in the nodes mapping
@@ -54,14 +52,14 @@ impl MyGraph {
     }
 
     /// Retrieves the `NodeIndex` of a node in the graph based on its `NodeId`.
-    pub fn get_node_index(&self, node_id: &NodeId) -> Option<NodeIndex> {
+    pub fn get_node_index(&self, node_id: NodeId) -> Option<NodeIndex> {
         // Get the NodeIndex from the nodes mapping based on the given NodeId
         self.nodes.get(&node_id).cloned().or_else(|| {
             // If the NodeIndex is not found in the mapping, iterate over all node indices in the graph
             // and find the first node with a matching NodeId
             self.graph
                 .node_indices()
-                .find(|&index| self.graph[index].get_id() == *node_id)
+                .find(|&index| self.graph[index].get_id() == node_id)
         })
     }
 
@@ -77,13 +75,13 @@ impl MyGraph {
     }
 
     /// Checks if a node with the given `NodeId` exists in the graph.
-    pub fn contains_node(&self, node_id: &NodeId) -> bool {
+    pub fn contains_node(&self, node_id: NodeId) -> bool {
         // Check if the given NodeId exists in the nodes mapping
         self.get_node_index(node_id).is_some()
     }
 
     /// Checks if an edge between the two given nodes exists in the graph.
-    pub fn contains_edge(&self, source: &NodeId, target: &NodeId) -> bool {
+    pub fn contains_edge(&self, source: NodeId, target: NodeId) -> bool {
         // Check if the source and target nodes have valid NodeIndices in the graph
         if let (Some(source_index), Some(target_index)) =
             (self.get_node_index(source), self.get_node_index(target))
@@ -98,8 +96,8 @@ impl MyGraph {
     /// Adds an edge between the two given nodes in the graph AND create nodes if needed.
     pub fn add_edge_with_nodes(
         &mut self,
-        source: &NodeId,
-        target: &NodeId,
+        source: NodeId,
+        target: NodeId,
         weight: Weight,
     ) -> Result<(), MeritRankError> {
         let _ = self.add_node_by_id_if_not_exists(source);
@@ -109,8 +107,8 @@ impl MyGraph {
     /// Adds an edge between the two given nodes in the graph.
     pub fn add_edge(
         &mut self,
-        source: &NodeId,
-        target: &NodeId,
+        source: NodeId,
+        target: NodeId,
         weight: Weight,
     ) -> Result<(), MeritRankError> {
         // Check if the source and target nodes have valid NodeIndices in the graph
@@ -126,7 +124,7 @@ impl MyGraph {
     }
 
     /// Removes the edge between the two given nodes from the graph.
-    pub fn remove_edge(&mut self, source: &NodeId, target: &NodeId) {
+    pub fn remove_edge(&mut self, source: NodeId, target: NodeId) {
         // Check if the source and target nodes have valid NodeIndices in the graph
         if let (Some(source_index), Some(target_index)) =
             (self.get_node_index(source), self.get_node_index(target))
@@ -139,7 +137,7 @@ impl MyGraph {
     }
 
     /// Retrieves the neighboring nodes of a given node.
-    pub fn neighbors(&self, ego: &NodeId) -> Vec<NodeId> {
+    pub fn neighbors(&self, ego: NodeId) -> Vec<NodeId> {
         // Get the NodeIndex of the ego node from the nodes mapping
         self.get_node_index(ego)
             .map(|ego_index| {
@@ -171,7 +169,7 @@ impl MyGraph {
         // Return None if the ego node does not exist in the graph
         // or if there are no edges connected to it
         // Get the NodeIndex of the ego node from the nodes mapping
-        self.get_node_index(&ego).and_then(|ego_index| {
+        self.get_node_index(ego).and_then(|ego_index| {
             // Get the edges of the graph and filter out the edges that do not have the ego node as source
             let ego_edges = self.graph.edges(ego_index);
             let filtered_edges = ego_edges.filter(|edge| edge.source() == ego_index);
@@ -215,7 +213,7 @@ impl MyGraph {
         )
     }
 
-    pub fn outgoing(&self, focus_id: &NodeId) -> Vec<(EdgeIndex, NodeIndex, NodeId)> {
+    pub fn outgoing(&self, focus_id: NodeId) -> Vec<(EdgeIndex, NodeIndex, NodeId)> {
         println!("outgoing: focus_id={}", focus_id);
         self.get_node_index(focus_id)
             .map(|focus_index| {
@@ -233,7 +231,7 @@ impl MyGraph {
             .unwrap_or_else(Vec::new)
     }
 
-    pub fn no_path(&self, start: &NodeId, goal: &NodeId) -> Option<bool> {
+    pub fn no_path(&self, start: NodeId, goal: NodeId) -> Option<bool> {
         let start_index = self.get_node_index(start)?;
         let goal_index = self.get_node_index(goal)?;
         let goal_op = Some(goal_index);
@@ -247,7 +245,7 @@ impl MyGraph {
         Some( !path.contains_key(&goal_index) )
     }
 
-    pub fn shortest_path(&self, start: &NodeId, goal: &NodeId) -> Option<Vec<NodeId>> {
+    pub fn shortest_path(&self, start:NodeId, goal: NodeId) -> Option<Vec<NodeId>> {
         let start_index = self.get_node_index(start)?;
         let goal_index = self.get_node_index(goal)?;
         let (_, v) =
@@ -261,14 +259,14 @@ impl MyGraph {
         let result: Vec<NodeId> =
             v
             .iter()
-            .map(|idx| self.index2node(*idx))
+            .map(|&idx| self.index2node(idx))
             .collect();
 
         Some(result)
     }
 
     /// Checks if there is a path between the two given nodes.
-    pub fn is_connecting(&self, source: &NodeId, target: &NodeId) -> bool {
+    pub fn is_connecting(&self, source: NodeId, target: NodeId) -> bool {
         // Check if the source and target nodes have valid NodeIndices in the graph
         if let (Some(source_index), Some(target_index)) =
             (self.get_node_index(source), self.get_node_index(target))
@@ -293,7 +291,7 @@ impl MyGraph {
     }
 
     /// Retrieves the weight of the edge between the two given nodes.
-    pub fn edge_weight(&self, source: &NodeId, target: &NodeId) -> Option<Weight> {
+    pub fn edge_weight(&self, source: NodeId, target: NodeId) -> Option<Weight> {
         // Check if the source and target nodes have valid NodeIndices in the graph
         if let (Some(source_index), Some(target_index)) =
             (self.get_node_index(source), self.get_node_index(target))
@@ -326,16 +324,17 @@ impl MyGraph {
 
     /// ego_to_focus_path - find the shortst path from ego to focus
     /// using 1/(edge weight) cost
-    pub fn ego_to_focus_path(&self, ego: &NodeId, focus: &NodeId) -> HashMap<NodeIndex, Weight> {
+    pub fn ego_to_focus_path(&self, ego: NodeId, focus: NodeId) -> HashMap<NodeIndex, Weight> {
         petgraph::algo::dijkstra::dijkstra(
             &self.graph,
-            self.nodes[ego],
-            Some(self.nodes[focus]),
+            self.nodes[&ego],
+            Some(self.nodes[&focus]),
             |edge| {
-                if *edge.weight()==0.0f64 {
+                let weight = *edge.weight();
+                if weight==0.0f64 {
                     Weight::INFINITY // f64::INFINITY
                 } else {
-                    1.0 / edge.weight()
+                    1.0 / weight
                 }
             }
         )
