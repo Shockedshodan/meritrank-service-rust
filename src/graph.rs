@@ -127,8 +127,8 @@ impl GraphSingleton {
 
     /// Returns the ID of the node with the given name.
     pub fn node_id_to_name_unsafe(&self, node_id: NodeId) -> Result<String, GraphManipulationError> {
-        for (name, id) in self.node_names.iter() {
-            if *id == node_id {
+        for (name, &id) in self.node_names.iter() {
+            if id == node_id {
                 return Ok(name.to_string());
             }
         }
