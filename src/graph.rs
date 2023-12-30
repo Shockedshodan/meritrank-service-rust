@@ -81,7 +81,7 @@ impl GraphSingleton {
     /// Returns a `GraphManipulationError::MutexLockFailure()` if the mutex lock fails.
     pub fn add_node(node_name: &str) -> Result<NodeId, GraphManipulationError> {
         match GRAPH.lock() {
-            Ok(mut graph) => graph.get_node_id(node_name),
+            Ok(mut graph) => Ok(graph.get_node_id(node_name)),
             Err(e) => Err(GraphManipulationError::MutexLockFailure(format!(
                 "Mutex lock error: {}",
                 e
@@ -90,30 +90,33 @@ impl GraphSingleton {
     }
 
     // This method remains largely the same, it's already well structured
-    pub fn get_node_id(&mut self, node_name: &str) -> Result<NodeId, GraphManipulationError> {
+    pub fn get_node_id(&mut self, node_name: &str) -> NodeId {
         if let Some(&node_id) = self.node_names.get(node_name) {
-            Ok(node_id)
+            node_id
         } else {
             let new_node_id = self.graph.node_count() + 1;
             let node_id = NodeId::UInt(new_node_id);
             self.node_names.insert(node_name.to_string(), node_id);
             self.graph.add_node(node_id.into());
-            Ok(node_id)
+            node_id
         }
     }
 
     /// Returns the name of the node with the given ID.
+    pub fn node_name_to_id_unsafe(&self, node_name: &str) -> Result<NodeId, GraphManipulationError> {
+        if let Some(&node_id) = self.node_names.get(node_name) {
+            Ok(node_id)
+        } else {
+            Err(GraphManipulationError::NodeNotFound(format!(
+                "Node not found: {}",
+                node_name
+            )))
+        }
+    }
     pub fn node_name_to_id(node_name: &str) -> Result<NodeId, GraphManipulationError> {
         match GRAPH.lock() {
             Ok(graph) => {
-                if let Some(&node_id) = graph.node_names.get(node_name) {
-                    Ok(node_id)
-                } else {
-                    Err(GraphManipulationError::NodeNotFound(format!(
-                        "Node not found: {}",
-                        node_name
-                    )))
-                }
+                graph.node_name_to_id_unsafe(node_name)
             }
             Err(e) => Err(GraphManipulationError::MutexLockFailure(format!(
                 "Mutex lock error: {}",
@@ -123,18 +126,21 @@ impl GraphSingleton {
     }
 
     /// Returns the ID of the node with the given name.
+    pub fn node_id_to_name_unsafe(&self, node_id: NodeId) -> Result<String, GraphManipulationError> {
+        for (name, &id) in self.node_names.iter() {
+            if id == node_id {
+                return Ok(name.to_string());
+            }
+        }
+        Err(GraphManipulationError::NodeNotFound(format!(
+            "Node not found: {}",
+            node_id
+        )))
+    }
     pub fn node_id_to_name(node_id: NodeId) -> Result<String, GraphManipulationError> {
         match GRAPH.lock() {
             Ok(graph) => {
-                for (name, id) in graph.node_names.iter() {
-                    if *id == node_id {
-                        return Ok(name.to_string());
-                    }
-                }
-                Err(GraphManipulationError::NodeNotFound(format!(
-                    "Node not found: {}",
-                    node_id
-                )))
+                graph.node_id_to_name_unsafe(node_id)
             }
             Err(e) => Err(GraphManipulationError::MutexLockFailure(format!(
                 "Mutex lock error: {}",

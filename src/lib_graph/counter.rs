@@ -40,13 +40,13 @@ impl Counter {
     }
 
     /// Returns the count value for the given node ID, if it exists.
-    pub fn get_count(&self, key: &NodeId) -> Option<&Weight> {
-        self.counter.get(key)
+    pub fn get_count(&self, key: NodeId) -> Option<&Weight> {
+        self.counter.get(&key)
     }
 
     /// Returns a mutable reference to the count value for the given node ID, if it exists.
-    pub fn get_mut_count(&mut self, key: &NodeId) -> &mut Weight {
-        self.counter.entry(key.clone()).or_insert(0.0)
+    pub fn get_mut_count(&mut self, key: NodeId) -> &mut Weight {
+        self.counter.entry(key).or_insert(0.0)
     }
 
     /// Increments the count for the specified node and returns a mutable reference to the count.

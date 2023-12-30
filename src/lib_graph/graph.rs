@@ -2,12 +2,11 @@ use std::collections::HashMap;
 
 use petgraph::algo::has_path_connecting;
 use petgraph::graph::DiGraph;
-use petgraph::prelude::NodeIndex;
+use petgraph::prelude::{EdgeIndex, NodeIndex};
 
 #[allow(unused_imports)]
 use petgraph::visit::EdgeRef;
 
-// use crate::lib_graph::{MeritRankError, NodeId, Weight, Node};
 use crate::lib_graph::errors::MeritRankError;
 use crate::lib_graph::node::{Node, NodeId, Weight};
 
@@ -36,6 +35,15 @@ impl MyGraph {
     }
 
     /// Adds a node to the graph and returns its `NodeIndex`.
+    pub fn add_node_by_id(&mut self, node_id: NodeId) -> NodeIndex {
+        // Add a node to the graph and store its NodeIndex in the nodes mapping
+        let index = self.graph.add_node(Node::new(node_id));
+        self.nodes.insert(node_id, index);
+        index
+    }
+    pub fn add_node_by_id_if_not_exists(&mut self, node_id: NodeId) -> NodeIndex {
+        self.get_node_index(node_id).unwrap_or_else(|| self.add_node_by_id(node_id))
+    }
     pub fn add_node(&mut self, node: Node) -> NodeIndex {
         // Add a node to the graph and store its NodeIndex in the nodes mapping
         let index = self.graph.add_node(node.clone());
@@ -85,6 +93,17 @@ impl MyGraph {
         }
     }
 
+    /// Adds an edge between the two given nodes in the graph AND create nodes if needed.
+    pub fn add_edge_with_nodes(
+        &mut self,
+        source: NodeId,
+        target: NodeId,
+        weight: Weight,
+    ) -> Result<(), MeritRankError> {
+        let _ = self.add_node_by_id_if_not_exists(source);
+        let _ = self.add_node_by_id_if_not_exists(target);
+        self.add_edge(source, target, weight)
+    }
     /// Adds an edge between the two given nodes in the graph.
     pub fn add_edge(
         &mut self,
@@ -177,6 +196,75 @@ impl MyGraph {
         })
     }
 
+    pub fn all(&self) -> (Vec<NodeId>, Vec<(NodeId, NodeId, Weight)>) {
+        let (nodes, edges) =
+            self.graph.clone().into_nodes_edges();
+        (
+            nodes
+                .iter()
+                .map(|n| n.weight.get_id())
+                .collect(),
+            edges
+                .iter()
+                .map(|e| {
+                    (self.index2node(e.source()), self.index2node(e.target()), e.weight)
+                })
+                .collect()
+        )
+    }
+
+    pub fn outgoing(&self, focus_id: NodeId) -> Vec<(EdgeIndex, NodeIndex, NodeId)> {
+        println!("outgoing: focus_id={}", focus_id);
+        self.get_node_index(focus_id)
+            .map(|focus_index| {
+                println!("outgoing: focus_index={:?}", focus_index);
+                self.graph
+                    .edges_directed(focus_index, petgraph::Direction::Outgoing)
+                    .into_iter()
+                    .map(|e| {
+                            println!("outgoing: e={:?}", e);
+                            (e.id(), e.target(), self.index2node(e.target()))
+                        }
+                    )
+                    .collect()
+            })
+            .unwrap_or_else(Vec::new)
+    }
+
+    pub fn no_path(&self, start: NodeId, goal: NodeId) -> Option<bool> {
+        let start_index = self.get_node_index(start)?;
+        let goal_index = self.get_node_index(goal)?;
+        let goal_op = Some(goal_index);
+        let path =
+            petgraph::algo::dijkstra(
+                &self.graph,
+                start_index,
+                goal_op,
+                |eref| { *eref.weight() });
+
+        Some( !path.contains_key(&goal_index) )
+    }
+
+    pub fn shortest_path(&self, start:NodeId, goal: NodeId) -> Option<Vec<NodeId>> {
+        let start_index = self.get_node_index(start)?;
+        let goal_index = self.get_node_index(goal)?;
+        let (_, v) =
+            petgraph::algo::astar(
+                &self.graph,
+                start_index,
+                |finish| finish == goal_index,
+                |e| *e.weight(),
+                |_| 0.0f64
+            )?;
+        let result: Vec<NodeId> =
+            v
+            .iter()
+            .map(|&idx| self.index2node(idx))
+            .collect();
+
+        Some(result)
+    }
+
     /// Checks if there is a path between the two given nodes.
     pub fn is_connecting(&self, source: NodeId, target: NodeId) -> bool {
         // Check if the source and target nodes have valid NodeIndices in the graph
@@ -227,6 +315,29 @@ impl MyGraph {
     pub fn clear(&mut self) {
         self.graph.clear();
         self.nodes.clear();
+    }
+
+    /// NodeIndex --> NodeId
+    pub fn index2node(&self, index: NodeIndex) -> NodeId {
+        self.graph[index].get_id() // "syntax index"
+    }
+
+    /// ego_to_focus_path - find the shortst path from ego to focus
+    /// using 1/(edge weight) cost
+    pub fn ego_to_focus_path(&self, ego: NodeId, focus: NodeId) -> HashMap<NodeIndex, Weight> {
+        petgraph::algo::dijkstra::dijkstra(
+            &self.graph,
+            self.nodes[&ego],
+            Some(self.nodes[&focus]),
+            |edge| {
+                let weight = *edge.weight();
+                if weight==0.0f64 {
+                    Weight::INFINITY // f64::INFINITY
+                } else {
+                    1.0 / weight
+                }
+            }
+        )
     }
 }
 
