@@ -7,23 +7,21 @@ RUN cargo build --release
 RUN cd util/zerorec && cargo build && cargo build --release
 
 FROM scratch as debug
-WORKDIR /srv
-COPY --from=compile /usr/project/target/debug/meritrank-rust-service meritrank-rust-service
-COPY --from=compile /usr/project/util/zerorec/target/debug/zerorec zerorec
+COPY --from=compile /usr/project/target/debug/meritrank-rust-service /meritrank-rust-service
+COPY --from=compile /usr/project/util/zerorec/target/debug/zerorec /zerorec
 #COPY --from=compile /usr/project/util/crontab /etc/cron.d/zerorec
 # ENV RUST_SERVICE_PARALLEL=128
 ENV RUST_SERVICE_URL=tcp://0.0.0.0:10234
 EXPOSE 10234
 #RUN apt-get update && apt-get -y install cron
-ENTRYPOINT ./meritrank-rust-service
+ENTRYPOINT ["/meritrank-rust-service"]
 
 FROM scratch as release
-WORKDIR /srv
-COPY --from=compile /usr/project/target/release/meritrank-rust-service meritrank-rust-service
-COPY --from=compile /usr/project/util/zerorec/target/release/zerorec zerorec
+COPY --from=compile /usr/project/target/release/meritrank-rust-service /meritrank-rust-service
+COPY --from=compile /usr/project/util/zerorec/target/release/zerorec /zerorec
 #COPY --from=compile /usr/project/util/crontab /etc/cron.d/zerorec
 ENV RUST_SERVICE_PARALLEL=128
 ENV RUST_SERVICE_URL=tcp://0.0.0.0:10234
 EXPOSE 10234
 #RUN apt-get update && apt-get -y install cron
-ENTRYPOINT ./meritrank-rust-service
+ENTRYPOINT ["/meritrank-rust-service"]
