@@ -11,7 +11,7 @@ lazy_static! {
 
     static ref ZERO_NODE: String =
         var("ZERO_NODE")
-            .unwrap_or("Zero".to_string());
+            .unwrap_or("U000000000000".to_string());
 
     static ref TOP_NODES_LIMIT: usize =
         var("TOP_NODES_LIMIT")
