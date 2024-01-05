@@ -231,6 +231,30 @@ impl MyGraph {
             .unwrap_or_else(Vec::new)
     }
 
+    pub fn connected(&self, focus_id: NodeId) -> Vec<(EdgeIndex, NodeId, NodeId)> {
+        println!("connected: focus_id={}", focus_id);
+        self.get_node_index(focus_id)
+            .map(|focus_index| {
+                println!("connected: focus_index={:?}", focus_index);
+                self.graph
+                    .edges(focus_index)
+                    .into_iter()
+                    .map(|e| {
+                        println!("connected: e={:?}", e);
+                        if e.source()==focus_index {
+                            (e.id(), focus_id, self.index2node(e.target()))
+                        } else if e.target()==focus_index {
+                            (e.id(), self.index2node(e.source()), focus_id)
+                        } else {
+                            panic!("Unexpected edge at connected: {:?}", e)
+                        }
+                    }
+                    )
+                    .collect()
+            })
+            .unwrap_or_else(Vec::new)
+    }
+
     pub fn no_path(&self, start: NodeId, goal: NodeId) -> Option<bool> {
         let start_index = self.get_node_index(start)?;
         let goal_index = self.get_node_index(goal)?;

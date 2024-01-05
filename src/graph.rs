@@ -4,8 +4,6 @@ use std::sync::{Arc, Mutex};
 
 // External crate imports
 use lazy_static::lazy_static;
-use petgraph::IntoWeightedEdge;
-
 
 // Current crate (`crate::`) imports
 pub use crate::error::GraphManipulationError;

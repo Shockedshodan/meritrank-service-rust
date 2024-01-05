@@ -5,6 +5,8 @@ use std::fs::read_to_string;
 use reflection::Reflection;
 use reflection_derive::Reflection;
 use tsv::Env;
+use itertools::Itertools;
+use rayon::prelude::*;
 
 lazy_static! {
     static ref SERVICE_URL: String =
@@ -65,6 +67,7 @@ struct Rec {
 }
 fn add_tsv(file_name: &str) {
     println!("{file_name}");
+
     let mut env = // Env::default();
         Env::make_env(
             false,
@@ -74,18 +77,22 @@ fn add_tsv(file_name: &str) {
         ).unwrap();
 
     read_to_string(file_name)
-        .unwrap()  // panic on possible file-reading errors
-        .lines()  // split the string into an iterator of string slices
+        .unwrap()   // panic on possible file-reading errors
+        .lines()    // split the string into an iterator of string slices
         .skip(1) // header
-        .flat_map(|s| {
-            println!("s={s}");
+        .flat_map(|s|
             tsv::de::from_str::<Rec>(s, Rec::schemata(), &mut env)
-        })  // make each slice into a string
-        .for_each(|r|
-            mr_edge(r.subject.as_str(), r.object.as_str(), r.amount)
-                .unwrap_or_else(|e| {
-                    println!("Error adding {:?}, {:?}", r, e)
-                })
+        )
+        //.par_chunks(8);
+        .chunks(8)
+        .into_iter()
+        .for_each(|chunk|
+            chunk.collect::<Vec<_>>().into_par_iter().for_each(|r|
+                mr_edge(r.subject.as_str(), r.object.as_str(), r.amount)
+                    .unwrap_or_else(|e| {
+                        println!("Error adding {:?}, {:?}", r, e)
+                    })
+            )
         )
 }
 
