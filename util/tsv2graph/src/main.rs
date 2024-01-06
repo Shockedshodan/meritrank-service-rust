@@ -20,6 +20,7 @@ const FILES: &'static [&str] = &[
     "/tmp/vote_beacon.tsv"
 ];
 /*
+full_dump.sql.gz (30 Dec, 2023):
 postgres=# COPY (select * from vote_user) TO '/tmp/vote_user.tsv'  CSV  HEADER DELIMITER E'\t';
 COPY 242
 postgres=# COPY (select * from vote_comment) TO '/tmp/vote_comment.tsv'  CSV  HEADER DELIMITER E'\t';

@@ -163,6 +163,10 @@ fn process(req: Message) -> Result<Vec<u8>, Box<dyn std::error::Error>> {
         mr_connected(ego)
     } else if let Ok(("for_beacons_global", ())) = rmp_serde::from_slice(slice) {
         mr_beacons_global()
+    } else if let Ok(("nodes", ())) = rmp_serde::from_slice(slice) {
+        mr_nodes()
+    } else if let Ok(("edges", ())) = rmp_serde::from_slice(slice) {
+        mr_edges()
     } else {
         let err: String = format!("Error: Cannot understand request {:?}", &req[..]);
         eprintln!("{}", err);
@@ -605,5 +609,42 @@ fn mr_beacons_global() -> Result<Vec<u8>, Box<dyn std::error::Error + 'static>> 
     println!("mr_beacons_global: filtered {} edges.", result.len());
     let v: Vec<u8> = rmp_serde::to_vec(&result)?;
 
+    Ok(v)
+}
+
+fn mr_nodes() -> Result<Vec<u8>, Box<dyn std::error::Error + 'static>> {
+    let graph = GRAPH.lock()?;
+    let g = graph.borrow_graph();
+    let (nodes, _) = g.all(); // not optimal
+
+    let result: Vec<String> =
+        nodes
+            .iter()
+            .map(|&node_id|
+                graph.node_id_to_name_unsafe(node_id)
+            )
+            .into_iter()
+            .collect::<Result<Vec<String>, GraphManipulationError>>()?;
+
+    let v: Vec<u8> = rmp_serde::to_vec(&result)?;
+    Ok(v)
+}
+
+fn mr_edges() -> Result<Vec<u8>, Box<dyn std::error::Error + 'static>> {
+    let graph = GRAPH.lock()?;
+    let g = graph.borrow_graph();
+    let (_, edges) = g.all(); // not optimal
+
+    let result: Vec<(String, String, Weight)> =
+        edges
+            .iter()
+            .map(|&(from_id, to_id, w)| {
+                let from = graph.node_id_to_name_unsafe(from_id)?;
+                let to = graph.node_id_to_name_unsafe(to_id)?;
+                Ok((from, to, w))
+            })
+            .collect::<Result<Vec<(String, String, Weight)>, GraphManipulationError>>()?;
+
+    let v: Vec<u8> = rmp_serde::to_vec(&result)?;
     Ok(v)
 }
