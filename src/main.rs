@@ -337,7 +337,7 @@ fn gravity_graph(
                     }
                     // assert!( get_edge(a, b) != None);
 
-                    copy.add_edge_with_nodes(a_id, b_id, w_ab);
+                    let _ = copy.add_edge_with_nodes(a_id, b_id, w_ab)?;
                     println!("copy.add_edge_with_nodes(({a_id}, {b_id}, {w_ab});");
 
                 } else if b.starts_with("C") || b.starts_with("B"){
@@ -369,7 +369,7 @@ fn gravity_graph(
                         let w_ac: f64 =
                             w_ab * w_bc * (if w_ab < 0.0f64 && w_bc < 0.0f64 { -1.0f64 } else { 1.0f64 });
 
-                        copy.add_edge_with_nodes(a_id, c_id, w_ac);
+                        let _ = copy.add_edge_with_nodes(a_id, c_id, w_ac)?;
                         println!("copy.add_edge_with_nodes(({a_id}, {c_id}, {w_ac});");
                     }
                 }
@@ -564,7 +564,7 @@ fn mr_connected(ego: &str) -> Result<Vec<u8>, Box<dyn std::error::Error + 'stati
         g
             .connected(node_id)
             .iter()
-            .map(|(_edgeIndex, from, to)|
+            .map(|(_edge_index, from, to)|
                 (
                     graph.node_id_to_name_unsafe(*from).unwrap_or(from.to_string()),
                     graph.node_id_to_name_unsafe(*to).unwrap_or(to.to_string())
