@@ -11,7 +11,7 @@ lazy_static! {
 
     static ref ZERO_NODE: String =
         var("ZERO_NODE")
-            .unwrap_or("Zero".to_string());
+            .unwrap_or("U000000000000".to_string());
 
     static ref TOP_NODES_LIMIT: usize =
         var("TOP_NODES_LIMIT")
@@ -36,30 +36,38 @@ fn request<T: for<'a> Deserialize<'a>>(
     })
 }
 
-fn delete_edge(target: &str) -> Result<(), Box<dyn std::error::Error + 'static>>{
+fn get_reduced_graph() -> Result<Vec<(String, String, f64)>, Box<dyn std::error::Error + 'static>> {
+    let rq = ("for_beacons_global", ());
+    let req = rmp_serde::to_vec(&rq)?;
+    request(&req)
+}
+
+fn get_connected(ego: &str) -> Result<Vec<(String, String)>, Box<dyn std::error::Error + 'static>> {
+    let rq = (((ego, "connected"), ), ());
+    let req = rmp_serde::to_vec(&rq)?;
+    request(&req)
+}
+
+fn delete_edge(src: &str, target: &str) -> Result<(), Box<dyn std::error::Error + 'static>>{
     let rq =
-        ((("src", "delete", ZERO_NODE.as_str()), ("dest", "delete", target)), ());
+        ((("src", "delete", src), ("dest", "delete", target)), ());
     let req = rmp_serde::to_vec(&rq)?;
     let _res: Vec<()> = request(&req)?;
     Ok(())
 }
 
 fn delete_from_zero() -> Result<(), Box<dyn std::error::Error + 'static>> {
-    let rq_scores = ((("src", "=", ZERO_NODE.as_str()), ), ()); // mr_scores
-    let req = rmp_serde::to_vec(&rq_scores)?;
-    let res: Vec<(String, String, f64)> = request(&req)?;
-    res
-        .iter()
-        .map(|(_, target, _)| {
-            delete_edge(target.as_str())
-        })
-        .collect()
-}
-
-fn get_reduced_graph() -> Result<Vec<(String, String, f64)>, Box<dyn std::error::Error + 'static>>{
-    let rq = ("for_beacons_global", ());
-    let req = rmp_serde::to_vec(&rq)?;
-    request(&req)
+    let res: Vec<(String,String)> = get_connected(&ZERO_NODE)?;
+    println!("Deleting {} old Zero edges...", res.len());
+    let _ =
+        res.
+            iter()
+            .map(| (src, target)| {
+                assert!( ZERO_NODE.eq(src) || ZERO_NODE.eq(target) );
+                delete_edge(src.as_str(), target.as_str())
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+    Ok(())
 }
 
 fn mr_edge(
@@ -124,7 +132,6 @@ fn main() {
     }
 
     // delete old Zero edges
-    println!("Deleting old Zero edges...");
     delete_from_zero().expect("Cannot delete old edges from Zero!");
 
     // create new Zero edges

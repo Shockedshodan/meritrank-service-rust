@@ -5,15 +5,12 @@ use lazy_static::lazy_static;
 use std::string::ToString;
 use crate::error::GraphManipulationError;
 use crate::graph::{GraphSingleton, NodeId, GRAPH};
-use crate::lib_graph::{MeritRank, MyDiGraph, MyGraph, Weight};
+use crate::lib_graph::{MeritRank, MyGraph, Weight};
 use nng::{Aio, AioResult, Context, Message, Protocol, Socket};
 
 use itertools::Itertools;
 use std::collections::HashMap;
-use std::ops::Index;
 use petgraph::graph::{EdgeIndex, NodeIndex};
-use petgraph::visit::EdgeRef;
-
 
 mod graph; // This module is for graph related operations
 // #[cfg(feature = "shared")]
@@ -26,6 +23,12 @@ lazy_static! {
     static ref SERVICE_URL: String =
         var("RUST_SERVICE_URL")
             .unwrap_or("tcp://127.0.0.1:10234".to_string());
+
+    static ref NUM_WALK: usize =
+        var("GRAVITY_NUM_WALK")
+            .ok()
+            .and_then(|s| s.parse::<usize>().ok())
+            .unwrap_or(100);
 
     static ref GRAVITY_NUM_WALK: usize =
         var("GRAVITY_NUM_WALK")
@@ -156,8 +159,14 @@ fn process(req: Message) -> Result<Vec<u8>, Box<dyn std::error::Error>> {
         mr_gravity_graph(ego, focus)
     } else if let Ok((((ego, "gravity_nodes", focus), ), ())) = rmp_serde::from_slice(slice) {
         mr_gravity_nodes(ego, focus)
+    } else if let Ok((((ego, "connected"), ), ())) = rmp_serde::from_slice(slice) {
+        mr_connected(ego)
     } else if let Ok(("for_beacons_global", ())) = rmp_serde::from_slice(slice) {
         mr_beacons_global()
+    } else if let Ok(("nodes", ())) = rmp_serde::from_slice(slice) {
+        mr_nodes()
+    } else if let Ok(("edges", ())) = rmp_serde::from_slice(slice) {
+        mr_edges()
     } else {
         let err: String = format!("Error: Cannot understand request {:?}", &req[..]);
         eprintln!("{}", err);
@@ -169,7 +178,7 @@ fn mr_node_score(ego: &str, target: &str) -> Result<Vec<u8>, Box<dyn std::error:
     let mut rank = GraphSingleton::get_rank()?;
     let ego_id: NodeId = GraphSingleton::node_name_to_id(ego)?;
     let target_id: NodeId = GraphSingleton::node_name_to_id(target)?;
-    let _ = rank.calculate(ego_id, 10)?;
+    let _ = rank.calculate(ego_id, *NUM_WALK)?;
     let w: Weight = rank.get_node_score(ego_id, target_id)?;
     let result: Vec<(&str, &str, f64)> = [(ego, target, w)].to_vec();
     let v: Vec<u8> = rmp_serde::to_vec(&result)?;
@@ -179,7 +188,7 @@ fn mr_node_score(ego: &str, target: &str) -> Result<Vec<u8>, Box<dyn std::error:
 fn mr_scores(ego: &str) -> Result<Vec<u8>, Box<dyn std::error::Error + 'static>> {
     let mut rank = GraphSingleton::get_rank()?;
     let node_id: NodeId = GraphSingleton::node_name_to_id(ego)?;
-    let _ = rank.calculate(node_id, 10)?;
+    let _ = rank.calculate(node_id, *NUM_WALK)?;
     let result: Vec<(&str, String, Weight)> = rank
         .get_ranks(node_id, None)?
         .into_iter()
@@ -255,7 +264,7 @@ fn mr_delete_edge(
 // todo: move into graph.rs
 fn mr_delete_node(
     ego: &str,
-) -> core::result::Result<(), GraphManipulationError> {
+) -> Result<(), GraphManipulationError> {
     match GRAPH.lock() {
         Ok(mut graph) => {
             let ego_id = graph.get_node_id(ego);
@@ -277,7 +286,7 @@ fn mr_gravity_graph(
     //&self,
     ego: &str,
     focus: &str
-) -> core::result::Result<Vec<u8>, Box<dyn std::error::Error + 'static>> {
+) -> Result<Vec<u8>, Box<dyn std::error::Error + 'static>> {
     println!("mr_gravity_graph({ego}, {focus})");
     let (result, _) = gravity_graph(ego, focus, false, 3)?;
     let v: Vec<u8> = rmp_serde::to_vec(&result)?;
@@ -288,7 +297,7 @@ fn mr_gravity_nodes(
     //&self,
     ego: &str,
     focus: &str
-) -> core::result::Result<Vec<u8>, Box<dyn std::error::Error + 'static>> {
+) -> Result<Vec<u8>, Box<dyn std::error::Error + 'static>> {
     println!("mr_gravity_node({ego}, {focus})");
     // TODO: change HashMap to string pairs here!?
     let (_, hash_map) = gravity_graph(ego, focus, false, 3)?;
@@ -304,7 +313,7 @@ fn gravity_graph(
     limit: usize /* | None */
 ) -> Result<(Vec<(String, String, Weight)>, HashMap<String, Weight>), GraphManipulationError> {
     match GRAPH.lock() {
-        Ok(mut graph) => {
+        Ok(graph) => {
             let mut rank: MeritRank = MeritRank::new(graph.borrow_graph().clone())?;
 
             let mut copy: MyGraph = MyGraph::new();
@@ -328,7 +337,7 @@ fn gravity_graph(
                     }
                     // assert!( get_edge(a, b) != None);
 
-                    copy.add_edge_with_nodes(a_id, b_id, w_ab);
+                    let _ = copy.add_edge_with_nodes(a_id, b_id, w_ab)?;
                     println!("copy.add_edge_with_nodes(({a_id}, {b_id}, {w_ab});");
 
                 } else if b.starts_with("C") || b.starts_with("B"){
@@ -360,7 +369,7 @@ fn gravity_graph(
                         let w_ac: f64 =
                             w_ab * w_bc * (if w_ab < 0.0f64 && w_bc < 0.0f64 { -1.0f64 } else { 1.0f64 });
 
-                        copy.add_edge_with_nodes(a_id, c_id, w_ac);
+                        let _ = copy.add_edge_with_nodes(a_id, c_id, w_ac)?;
                         println!("copy.add_edge_with_nodes(({a_id}, {c_id}, {w_ac});");
                     }
                 }
@@ -393,7 +402,7 @@ fn gravity_graph(
             println!("sorted.size={}", sorted.len());
             println!("limited.size={}", limited.len());
 
-            for (edge_index, node_index) in limited {
+            for (_edge_index, node_index) in limited {
                 let node_id = copy.index2node(**node_index);
                 copy.remove_edge(ego_id, node_id);
                 println!("copy.remove_edge({ego_id}, {node_id})");
@@ -524,12 +533,12 @@ fn gravity_graph(
                         let test2 = rank.get_node_score(ego_id, *node_id);
                         println!("\tnode_id={node_id}, test1={:?}, test2={:?}", test1, test2);
                         let name = graph.node_id_to_name_unsafe(*node_id)?;
+
+                        if !rank.get_personal_hits().contains_key(&ego_id) {
+                            let _ = rank.calculate(ego_id, *GRAVITY_NUM_WALK)?;
+                        }
                         let score =
-                            rank.get_node_score(ego_id, *node_id)
-                                .or_else(|_| {
-                                    let _ = rank.calculate(ego_id, *GRAVITY_NUM_WALK)?;
-                                    rank.get_node_score(ego_id, *node_id)
-                                })?;
+                            rank.get_node_score(ego_id, *node_id)?;
                         Ok::<(String, Weight), GraphManipulationError>( (name, score) )
                     })
                     .collect::<Vec<_>>()
@@ -547,9 +556,27 @@ fn gravity_graph(
     }
 }
 
-fn mr_beacons_global() -> core::result::Result<Vec<u8>, Box<dyn std::error::Error + 'static>> {
+fn mr_connected(ego: &str) -> Result<Vec<u8>, Box<dyn std::error::Error + 'static>> {
+    let node_id: NodeId = GraphSingleton::node_name_to_id(ego)?;
+    let graph = GRAPH.lock()?;
+    let g = graph.borrow_graph();
+    let result: Vec<(String, String)> =
+        g
+            .connected(node_id)
+            .iter()
+            .map(|(_edge_index, from, to)|
+                (
+                    graph.node_id_to_name_unsafe(*from).unwrap_or(from.to_string()),
+                    graph.node_id_to_name_unsafe(*to).unwrap_or(to.to_string())
+                )
+            )
+            .collect();
+    let v: Vec<u8> = rmp_serde::to_vec(&result)?;
+    Ok(v)
+}
+fn mr_beacons_global() -> Result<Vec<u8>, Box<dyn std::error::Error + 'static>> {
     println!("mr_beacons_global() called");
-    let mut graph = GRAPH.lock()?;
+    let graph = GRAPH.lock()?;
     let g = graph.borrow_graph();
     let (_, edges) = g.all(); // not optimal
     println!("mr_beacons_global: total {} edges.", edges.len());
@@ -567,18 +594,57 @@ fn mr_beacons_global() -> core::result::Result<Vec<u8>, Box<dyn std::error::Erro
                 let ego = graph.node_id_to_name_unsafe(*ego_id)?;
                 Ok::<(String, &NodeId, &Weight), GraphManipulationError>((ego, dest_id, weight))
             })
-            .filter(|(ego, dest_id, weight)|
+            .filter(|(ego, _dest_id, _weight)|
                 ego.starts_with("U")
             )
             .flat_map(|(ego, dest_id, weight)| {
                 let dest = graph.node_id_to_name_unsafe(*dest_id)?;
                 Ok::<(String, String, &Weight), GraphManipulationError>((ego, dest, weight))
             })
-            .filter(|(ego, dest, weight)|
+            .filter(|(_ego, dest, _weight)|
                 dest.starts_with("U")||dest.starts_with("B")
             )
             .collect();
+
     println!("mr_beacons_global: filtered {} edges.", result.len());
+    let v: Vec<u8> = rmp_serde::to_vec(&result)?;
+
+    Ok(v)
+}
+
+fn mr_nodes() -> Result<Vec<u8>, Box<dyn std::error::Error + 'static>> {
+    let graph = GRAPH.lock()?;
+    let g = graph.borrow_graph();
+    let (nodes, _) = g.all(); // not optimal
+
+    let result: Vec<String> =
+        nodes
+            .iter()
+            .map(|&node_id|
+                graph.node_id_to_name_unsafe(node_id)
+            )
+            .into_iter()
+            .collect::<Result<Vec<String>, GraphManipulationError>>()?;
+
+    let v: Vec<u8> = rmp_serde::to_vec(&result)?;
+    Ok(v)
+}
+
+fn mr_edges() -> Result<Vec<u8>, Box<dyn std::error::Error + 'static>> {
+    let graph = GRAPH.lock()?;
+    let g = graph.borrow_graph();
+    let (_, edges) = g.all(); // not optimal
+
+    let result: Vec<(String, String, Weight)> =
+        edges
+            .iter()
+            .map(|&(from_id, to_id, w)| {
+                let from = graph.node_id_to_name_unsafe(from_id)?;
+                let to = graph.node_id_to_name_unsafe(to_id)?;
+                Ok((from, to, w))
+            })
+            .collect::<Result<Vec<(String, String, Weight)>, GraphManipulationError>>()?;
+
     let v: Vec<u8> = rmp_serde::to_vec(&result)?;
     Ok(v)
 }
