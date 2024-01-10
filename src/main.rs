@@ -69,16 +69,7 @@ fn main_sync() -> Result<(), Box<dyn std::error::Error + 'static>> {
 
     loop {
         let request: Message = s.recv()?;
-
-        let reply: Vec<u8> =
-            process(request)
-                .map(|msg| msg)
-                .unwrap_or_else(|e| {
-                    println!("{}", e);
-                    let s: String = e.to_string();
-                    rmp_serde::to_vec(&s).unwrap()
-                });
-
+        let reply: Vec<u8> = process(request);
         let _ = s.send(reply.as_slice()).map_err(|(_, e)| e)?;
     }
     // Ok(())
@@ -120,11 +111,7 @@ fn worker_callback(aio: Aio, ctx: &Context, res: AioResult) {
 
         // We successfully received a message.
         AioResult::Recv(Ok(req)) => {
-            let msg: Vec<u8> = process(req).unwrap_or_else(|e| {
-                println!("{}", e);
-                let s: String = e.to_string();
-                rmp_serde::to_vec(&s).unwrap()
-            });
+            let msg: Vec<u8> = process(req);
             ctx.send(&aio, msg.as_slice()).unwrap();
         }
 
@@ -140,11 +127,18 @@ fn worker_callback(aio: Aio, ctx: &Context, res: AioResult) {
     }
 }
 
-fn process(req: Message) -> Result<Vec<u8>, Box<dyn std::error::Error>> {
+fn process(req: Message) -> Vec<u8> {
     let slice = req.as_slice();
 
     let ctx = GraphContext::null();
+
     ctx.process(slice)
+        .map(|msg| msg)
+        .unwrap_or_else(|e| {
+            println!("{}", e);
+            let s: String = e.to_string();
+            rmp_serde::to_vec(&s).unwrap()
+        })
 }
 
 pub struct GraphContext {
@@ -188,6 +182,11 @@ impl GraphContext {
             self.mr_nodes()
         } else if let Ok(("edges", ())) = rmp_serde::from_slice(slice) {
             self.mr_edges()
+        } else if let Ok(("context", _context)) = rmp_serde::from_slice::<(&str, String)>(slice) {
+            //let request: Message = s.recv()?;
+            //let slice = req.as_slice();
+            //GraphContext::new(context).process(slice)
+            Ok(Vec::new()) // todo
         } else {
             let err: String = format!("Error: Cannot understand request {:?}", slice);
             eprintln!("{}", err);
