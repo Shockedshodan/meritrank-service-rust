@@ -7,6 +7,7 @@ use lazy_static::lazy_static;
 
 // Current crate (`crate::`) imports
 pub use crate::error::GraphManipulationError;
+use crate::error::GraphManipulationError::UnknownContextFailure;
 // #[allow(unused_imports)]
 // use crate::logger::Logger;
 
@@ -22,7 +23,8 @@ lazy_static! {
 #[allow(dead_code)]
 // GraphSingleton structure
 pub struct GraphSingleton {
-    graph: MyGraph,
+    graph: MyGraph, // null-context
+    graphs: HashMap<String, MyGraph>, // contexted
     node_names: HashMap<String, NodeId>,
 }
 
@@ -32,6 +34,7 @@ impl GraphSingleton {
     pub fn new() -> GraphSingleton {
         GraphSingleton {
             graph: MyGraph::new(),
+            graphs: HashMap::new(),
             node_names: HashMap::new(),
         }
     }
@@ -41,6 +44,21 @@ impl GraphSingleton {
         match GRAPH.lock() {
             Ok(graph) => {
                 let merit_rank = MeritRank::new(graph.graph.clone())?;
+                Ok(merit_rank)
+            }
+            Err(e) => Err(GraphManipulationError::MutexLockFailure(format!(
+                "Mutex lock error: {}",
+                e
+            ))),
+        }
+    }
+
+    pub fn get_rank1(context: &str) -> Result<MeritRank, GraphManipulationError> {
+        match GRAPH.lock() {
+            Ok(graph) => {
+                let g =
+                    graph.graphs.get(context).ok_or(UnknownContextFailure(context.to_string()))?;
+                let merit_rank = MeritRank::new(g.clone())?;
                 Ok(merit_rank)
             }
             Err(e) => Err(GraphManipulationError::MutexLockFailure(format!(
@@ -60,9 +78,22 @@ impl GraphSingleton {
         &self.graph
     }
 
+    pub fn borrow_graph1(&mut self, context: &String) -> &MyGraph {
+        if !self.graphs.contains_key(context) {
+            self.graphs.insert(context.clone(), MyGraph::new());
+        }
+        self.graphs.get(context).expect("No context at borrow_graph1!")
+    }
     /// Borrow Graph Mut
     pub fn borrow_graph_mut(&mut self) -> &mut MyGraph {
         &mut self.graph
+    }
+
+    pub fn borrow_graph_mut1(&mut self, context: &String) -> &mut MyGraph {
+        if !self.graphs.contains_key(context) {
+            self.graphs.insert(context.clone(), MyGraph::new());
+        }
+        self.graphs.get_mut(context).expect("No context at  borrow_graph_mut1!")
     }
 
     // Node-related methods
@@ -151,6 +182,7 @@ impl GraphSingleton {
         match GRAPH.lock() {
             Ok(mut graph) => {
                 graph.graph.clear();
+                graph.graphs.clear();
                 graph.node_names.clear();
                 Ok(())
             }
@@ -160,4 +192,6 @@ impl GraphSingleton {
             ))),
         }
     }
+
+    // TODO: clear context?
 }
