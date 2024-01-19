@@ -10,6 +10,7 @@ use nng::{Aio, AioResult, Context, Message, Protocol, Socket};
 
 use itertools::Itertools;
 use std::collections::HashMap;
+use std::sync::MutexGuard;
 use petgraph::graph::{EdgeIndex, NodeIndex};
 
 mod graph; // This module is for graph related operations
@@ -151,16 +152,17 @@ impl GraphContext {
             context: None
         }
     }
-    pub fn new(context_init: String) -> GraphContext {
+    pub fn new(context_init: &str) -> GraphContext {
         GraphContext {
-            context: Some(context_init)
+            context: Some(context_init.to_string())
         }
     }
 
     pub fn process(&self, slice: &[u8]) -> Result<Vec<u8>, Box<dyn std::error::Error>> {
-        if let Ok(((("src", "=", ego), ("dest", "=", target)), ())) =
-            rmp_serde::from_slice(slice)
-        {
+        if let Ok(("context", context, payload)) = rmp_serde::from_slice::<(&str, &str, Vec<u8>)>(slice) {
+            println!("context={context}");
+            GraphContext::new(&context).process(payload.as_slice())
+        } else if let Ok(((("src", "=", ego), ("dest", "=", target)), ())) = rmp_serde::from_slice(slice) {
             self.mr_node_score(ego, target)
         } else if let Ok(((("src", "=", ego), ), ())) = rmp_serde::from_slice(slice) {
             self.mr_scores(ego)
@@ -182,11 +184,6 @@ impl GraphContext {
             self.mr_nodes()
         } else if let Ok(("edges", ())) = rmp_serde::from_slice(slice) {
             self.mr_edges()
-        } else if let Ok(("context", _context)) = rmp_serde::from_slice::<(&str, String)>(slice) {
-            //let request: Message = s.recv()?;
-            //let slice = req.as_slice();
-            //GraphContext::new(context).process(slice)
-            Ok(Vec::new()) // todo
         } else {
             let err: String = format!("Error: Cannot understand request {:?}", slice);
             eprintln!("{}", err);
@@ -201,6 +198,15 @@ impl GraphContext {
             Some(context) => GraphSingleton::get_rank1(&context),
         }
     }
+
+    /*
+    fn borrow_graph<'a>(&'a self, mut graph: MutexGuard<GraphSingleton>) -> &MyGraph {
+        match &self.context {
+            None => graph.borrow_graph(),
+            Some(ctx) => graph.borrow_graph1(ctx)
+        }
+    }
+    */
 
     fn mr_node_score(&self, ego: &str, target: &str) -> Result<Vec<u8>, Box<dyn std::error::Error + 'static>> {
         let mut rank = self.get_rank()?;
@@ -319,16 +325,23 @@ impl GraphContext {
         // let rank: MeritRank = self.get_rank()?;
         // rank.calculate need mutable rank
         match GRAPH.lock() {
-            Ok(graph) => {
-                let mut rank: MeritRank = MeritRank::new(graph.borrow_graph().clone())?;
+            Ok(mut graph) => {
+                let mut rank: MeritRank = self.get_rank()?;
+                // MeritRank::new(graph.borrow_graph().clone())?;
                 // ? should we change weight/scores in GRAPH ?
-
-                let mut copy: MyGraph = MyGraph::new();
-                let source_graph: &MyGraph = graph.borrow_graph();
 
                 // focus_id in graph
                 let focus_id: NodeId = graph.node_name_to_id_unsafe(focus)?;
                 println!("focus_id={}", focus_id);
+
+                let mut copy: MyGraph = MyGraph::new();
+                let source_graph: &MyGraph =
+                    if let Some(context) = &self.context {
+                        graph.borrow_graph0(context)? // todo // ??
+                    } else {
+                        graph.borrow_graph()
+                    };
+
                 let focus_vector: Vec<(NodeId, NodeId, Weight)> =
                     source_graph.edges(focus_id).into_iter().flatten().collect();
 
@@ -596,10 +609,11 @@ impl GraphContext {
     ) -> Result<Vec<u8>, Box<dyn std::error::Error + 'static>> {
         let mut graph = GRAPH.lock()?;
         let node_id: NodeId = graph.node_name_to_id_unsafe(ego)?;
-        let my_graph: &MyGraph = match &self.context {
-            None => graph.borrow_graph(),
-            Some(c) => graph.borrow_graph1(c),
-        };
+        let my_graph: &MyGraph = // self.borrow_graph(graph);
+            match &self.context {
+                None => graph.borrow_graph(),
+                Some(ctx) => graph.borrow_graph1(ctx)
+            };
 
         let result: Vec<(String, String)> =
             my_graph
@@ -619,10 +633,12 @@ impl GraphContext {
 
     fn mr_beacons_global(&self) -> Result<Vec<u8>, Box<dyn std::error::Error + 'static>> {
         let mut graph = GRAPH.lock()?;
-        let my_graph = match &self.context {
-            None => graph.borrow_graph(),
-            Some(c) => graph.borrow_graph1(c),
-        };
+        let my_graph = // self.borrow_graph(graph);
+            match &self.context {
+                None => graph.borrow_graph(),
+                Some(ctx) => graph.borrow_graph1(ctx)
+            };
+
         let (_, edges) = my_graph.all(); // not optimal
         println!("mr_beacons_global: total {} edges.", edges.len());
         // Note:
@@ -659,10 +675,12 @@ impl GraphContext {
 
     fn mr_nodes(&self) -> Result<Vec<u8>, Box<dyn std::error::Error + 'static>> {
         let mut graph = GRAPH.lock()?;
-        let my_graph = match &self.context {
-            None => graph.borrow_graph(),
-            Some(c) => graph.borrow_graph1(c),
-        };
+        let my_graph = // self.borrow_graph(graph);
+            match &self.context {
+                None => graph.borrow_graph(),
+                Some(ctx) => graph.borrow_graph1(ctx)
+            };
+
         let (nodes, _) = my_graph.all(); // not optimal
 
         let result: Vec<String> =
@@ -680,10 +698,12 @@ impl GraphContext {
 
     fn mr_edges(&self) -> Result<Vec<u8>, Box<dyn std::error::Error + 'static>> {
         let mut graph = GRAPH.lock()?;
-        let my_graph = match &self.context {
-            None => graph.borrow_graph(),
-            Some(c) => graph.borrow_graph1(c),
-        };
+        let my_graph = // self.borrow_graph(graph);
+            match &self.context {
+                None => graph.borrow_graph(),
+                Some(ctx) => graph.borrow_graph1(ctx)
+            };
+
         let (_, edges) = my_graph.all(); // not optimal
 
         let result: Vec<(String, String, Weight)> =

@@ -78,6 +78,14 @@ impl GraphSingleton {
         &self.graph
     }
 
+    pub fn borrow_graph0(&self, context: &String) -> Result<&MyGraph,GraphManipulationError> {
+        if !self.graphs.contains_key(context) {
+            //self.graphs.insert(context.clone(), MyGraph::new());
+            Err(UnknownContextFailure(context.clone()))
+        } else {
+            Ok( self.graphs.get(context).expect("No context at borrow_graph1!") )
+        }
+    }
     pub fn borrow_graph1(&mut self, context: &String) -> &MyGraph {
         if !self.graphs.contains_key(context) {
             self.graphs.insert(context.clone(), MyGraph::new());
