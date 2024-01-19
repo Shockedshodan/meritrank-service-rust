@@ -208,6 +208,13 @@ impl GraphContext {
     }
     */
 
+    fn get_node_id(&self, mut graph: &mut MutexGuard<GraphSingleton>, name: &str) -> NodeId {
+        match &self.context {
+            None => graph.get_node_id(name),
+            Some(ctx) => graph.get_node_id1(ctx.as_str(), name)
+        }
+    }
+
     fn mr_node_score(&self, ego: &str, target: &str) -> Result<Vec<u8>, Box<dyn std::error::Error + 'static>> {
         let mut rank = self.get_rank()?;
         let ego_id: NodeId = GraphSingleton::node_name_to_id(ego)?; // thread safety?
@@ -250,14 +257,15 @@ impl GraphContext {
 
         // meritrank_add(subject, object, amount)?;
         let mut graph = GRAPH.lock()?;
-        let subject_id = graph.get_node_id(subject);
-        let object_id = graph.get_node_id(object);
+        let subject_id = self.get_node_id(&mut graph, subject);
+        let object_id = self.get_node_id(&mut graph, object);
 
         graph
             .borrow_graph_mut()
             .add_edge(subject_id.into(), object_id.into(), amount)?;
 
         if let Some(context) = &self.context {
+            println!("mr_edge contexted: {context}");
             graph
                 .borrow_graph_mut1(context)
                 .add_edge(subject_id.into(), object_id.into(), amount)?;
@@ -272,8 +280,8 @@ impl GraphContext {
         object: &str,
     ) -> Result<Vec<u8>, Box<dyn std::error::Error + 'static>> {
         let mut graph = GRAPH.lock()?;
-        let subject_id = graph.get_node_id(subject);
-        let object_id = graph.get_node_id(object);
+        let subject_id = self.get_node_id(&mut graph, subject);
+        let object_id = self.get_node_id(&mut graph, object);
 
         graph
             .borrow_graph_mut()
@@ -293,7 +301,7 @@ impl GraphContext {
         ego: &str,
     ) -> Result<Vec<u8>, Box<dyn std::error::Error + 'static>> {
         let mut graph = GRAPH.lock()?;
-        let ego_id = graph.get_node_id(ego);
+        let ego_id = self.get_node_id(&mut graph, ego);
 
         let my_graph: &mut MyGraph = graph.borrow_graph_mut();
         my_graph

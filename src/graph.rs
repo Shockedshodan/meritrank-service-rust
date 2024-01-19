@@ -8,7 +8,6 @@ use lazy_static::lazy_static;
 // Current crate (`crate::`) imports
 pub use crate::error::GraphManipulationError;
 use crate::error::GraphManipulationError::UnknownContextFailure;
-// #[allow(unused_imports)]
 // use crate::logger::Logger;
 
 // Current crate (`crate::`) imports
@@ -139,6 +138,17 @@ impl GraphSingleton {
         }
     }
 
+    pub fn get_node_id1(&mut self, context: &str, node_name: &str) -> NodeId {
+        if let Some(&node_id) = self.node_names.get(node_name) {
+            // todo: what if the node exists in another context?
+            node_id
+        } else {
+            let node_id = self.get_node_id(node_name); // create a node in null-context
+            let graph = self.borrow_graph_mut1(&context.to_string());
+            graph.add_node(node_id.into());
+            node_id
+        }
+    }
     /// Returns the name of the node with the given ID.
     pub fn node_name_to_id_unsafe(&self, node_name: &str) -> Result<NodeId, GraphManipulationError> {
         if let Some(&node_id) = self.node_names.get(node_name) {
