@@ -158,10 +158,66 @@ impl GraphContext {
         }
     }
 
+    pub fn process_context(context: &str, payload: Vec<u8>)  -> Result<Vec<u8>, Box<dyn std::error::Error>> {
+        println!("context={context}");
+        GraphContext::new(&context).process(payload.as_slice())
+    }
+
     pub fn process(&self, slice: &[u8]) -> Result<Vec<u8>, Box<dyn std::error::Error>> {
-        if let Ok(("context", context, payload)) = rmp_serde::from_slice::<(&str, &str, Vec<u8>)>(slice) {
-            println!("context={context}");
-            GraphContext::new(&context).process(payload.as_slice())
+        /*
+        match rmp_serde::from_slice(slice) {
+            Ok(("context", context, payload)) =>
+                Self::process_context(context, payload),
+
+            Ok(((("src", "=", ego), ("dest", "=", target)), ())) =>
+                self.mr_node_score(ego, target),
+
+            Ok(((("src", "=", ego), ), ())) =>
+                self.mr_scores(ego),
+
+            Ok((((subject, object, amount), ), ())) =>
+                self.mr_edge(subject, object, amount),
+
+            Ok(((("src", "delete", ego), ("dest", "delete", target)), ())) =>
+                self.mr_delete_edge(ego, target),
+
+            Ok(((("src", "delete", ego), ), ())) =>
+                self.mr_delete_node(ego),
+
+            Ok((((ego, "gravity", focus), ), ())) =>
+                self.mr_gravity_graph(ego, focus, true, 3),
+
+            Ok((((ego, "gravity_nodes", focus), ), ())) =>
+                self.mr_gravity_nodes(ego, focus),
+
+            Ok((((ego, "connected"), ), ())) =>
+                self.mr_connected(ego),
+
+            Ok(("for_beacons_global", ())) =>
+                self.mr_beacons_global(),
+
+            Ok(("nodes", ())) =>
+                self.mr_nodes(),
+
+            Ok(("edges", ())) =>
+                self.mr_edges(),
+
+            _ => {
+                let err: String = format!("Error: Cannot understand request {:?}", slice);
+                eprintln!("{}", err);
+                Err(err.into())
+            }
+        }
+        */
+        /*
+        #[proc_macro]
+        pub fn decode<T>(slice: &[u8]) -> T {
+            rmp_serde::from_slice(slice.clone())
+        }
+        */
+
+        if let Ok(("context", context, payload)) = rmp_serde::from_slice(slice) { // rmp_serde::from_slice::<(&str, &str, Vec<u8>)>(slice) {
+            Self::process_context(context, payload)
         } else if let Ok(((("src", "=", ego), ("dest", "=", target)), ())) = rmp_serde::from_slice(slice) {
             self.mr_node_score(ego, target)
         } else if let Ok(((("src", "=", ego), ), ())) = rmp_serde::from_slice(slice) {
@@ -260,15 +316,30 @@ impl GraphContext {
         let subject_id = self.get_node_id(&mut graph, subject);
         let object_id = self.get_node_id(&mut graph, object);
 
-        graph
-            .borrow_graph_mut()
-            .add_edge(subject_id.into(), object_id.into(), amount)?;
-
         if let Some(context) = &self.context {
             println!("mr_edge contexted: {context}");
+            let contexted_graph = graph.borrow_graph_mut1(context);
+            let old_weight =
+                contexted_graph
+                    .edge_weight(subject_id.into(), object_id.into())
+                    .unwrap_or(0.0);
+
+            contexted_graph
+                .upsert_edge_with_nodes(subject_id.into(), object_id.into(), amount)?;
+
+            let null_graph = graph.borrow_graph_mut();
+            match null_graph.get_edge_weight(subject_id.into(), object_id.into()) {
+                Ok(null_weight) =>
+                    *null_weight = *null_weight + amount - old_weight,
+                _ => {
+                    let _ =
+                        null_graph.upsert_edge(subject_id.into(), object_id.into(), amount)?;
+                }
+            }
+        } else {
             graph
-                .borrow_graph_mut1(context)
-                .add_edge(subject_id.into(), object_id.into(), amount)?;
+                .borrow_graph_mut()
+                .upsert_edge(subject_id.into(), object_id.into(), amount)?;
         }
 
         Ok(v)
@@ -365,7 +436,7 @@ impl GraphContext {
                         }
                         // assert!( get_edge(a, b) != None);
 
-                        let _ = copy.add_edge_with_nodes(a_id, b_id, w_ab)?;
+                        let _ = copy.upsert_edge_with_nodes(a_id, b_id, w_ab)?;
                         println!("copy.add_edge_with_nodes(({a_id}, {b_id}, {w_ab});");
                     } else if b.starts_with("C") || b.starts_with("B") {
                         // ? # For connections user-> comment | beacon -> user,
@@ -396,7 +467,7 @@ impl GraphContext {
                             let w_ac: f64 =
                                 w_ab * w_bc * (if w_ab < 0.0f64 && w_bc < 0.0f64 { -1.0f64 } else { 1.0f64 });
 
-                            let _ = copy.add_edge_with_nodes(a_id, c_id, w_ac)?;
+                            let _ = copy.upsert_edge_with_nodes(a_id, c_id, w_ac)?;
                             println!("copy.add_edge_with_nodes(({a_id}, {c_id}, {w_ac});");
                         }
                     }
@@ -477,7 +548,7 @@ impl GraphContext {
                             let w_ac: f64 =
                                 w_ab * w_bc * (if w_ab < 0.0f64 && w_bc < 0.0f64 { -1.0f64 } else { 1.0f64 });
                             println!("[0] copy.add_edge({a}, {c}, {w_ac}) (try)");
-                            copy.add_edge(a, c, w_ac)?;
+                            copy.upsert_edge(a, c, w_ac)?;
                             Ok(())
                         } else if a_name.starts_with("U") {
                             let weight =
@@ -488,7 +559,7 @@ impl GraphContext {
                                         )
                                     ))?;
                             println!("[1] copy.add_edge({a}, {b}, {weight}) (try)");
-                            copy.add_edge(a, b, weight)?;
+                            copy.upsert_edge(a, b, weight)?;
                             Ok(())
                         } else {
                             Ok(())
@@ -512,7 +583,7 @@ impl GraphContext {
                                     )
                                 ))?;
                         println!("[2] copy.add_edge({a}, {b}, {weight}) (try)");
-                        copy.add_edge(a, b, weight)?;
+                        copy.upsert_edge(a, b, weight)?;
                         Ok(())
                     } else if v3.len() == 1 {
                         // ego == focus ?

@@ -93,8 +93,8 @@ impl MyGraph {
         }
     }
 
-    /// Adds an edge between the two given nodes in the graph AND create nodes if needed.
-    pub fn add_edge_with_nodes(
+    /// Sets an edge between the two given nodes in the graph AND create nodes if needed.
+    pub fn upsert_edge_with_nodes(
         &mut self,
         source: NodeId,
         target: NodeId,
@@ -102,10 +102,10 @@ impl MyGraph {
     ) -> Result<(), MeritRankError> {
         let _ = self.add_node_by_id_if_not_exists(source);
         let _ = self.add_node_by_id_if_not_exists(target);
-        self.add_edge(source, target, weight)
+        self.upsert_edge(source, target, weight)
     }
-    /// Adds an edge between the two given nodes in the graph.
-    pub fn add_edge(
+    /// Sets an edge between the two given nodes in the graph.
+    pub fn upsert_edge(
         &mut self,
         source: NodeId,
         target: NodeId,
@@ -116,8 +116,31 @@ impl MyGraph {
             (self.get_node_index(source), self.get_node_index(target))
         {
             // Add an edge between the source and target NodeIndices with the given weight
-            self.graph.add_edge(source_index, target_index, weight);
+            self.graph.update_edge(source_index, target_index, weight);
             Ok(())
+        } else {
+            Err(MeritRankError::InvalidNode)
+        }
+    }
+
+    /// Returns a weight of the edge between the two given nodes in the graph.
+    pub fn get_edge_weight(
+        &mut self,
+        source: NodeId,
+        target: NodeId,
+    ) -> Result<&mut Weight, MeritRankError> {
+        // Check if the source and target nodes have valid NodeIndices in the graph
+        if let (Some(source_index), Some(target_index)) =
+            (self.get_node_index(source), self.get_node_index(target))
+        {
+            // Find and measure an edge between the source and target NodeIndices with the given weight
+            let edgeIndex =
+                self.graph.find_edge(source_index, target_index)
+                    .ok_or(MeritRankError::EdgeDoesNotExist)?;
+            let weight: &mut Weight =
+                self.graph.edge_weight_mut(edgeIndex)
+                    .ok_or(MeritRankError::EdgeDoesNotExist)?;
+            Ok(weight)
         } else {
             Err(MeritRankError::InvalidNode)
         }

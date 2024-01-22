@@ -2,6 +2,7 @@
 #[derive(Debug, Clone)]
 pub enum MeritRankError {
     NodeDoesNotExist,
+    EdgeDoesNotExist,
     SelfReferenceNotAllowed,
     RandomChoiceError,
     NoPathExists,
@@ -18,6 +19,7 @@ impl Display for MeritRankError {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result {
         match self {
             MeritRankError::NodeDoesNotExist => write!(f, "Node does not exist"),
+            MeritRankError::EdgeDoesNotExist => write!(f, "Edge does not exist"),
             MeritRankError::SelfReferenceNotAllowed => write!(f, "Self-reference is not allowed"),
             MeritRankError::RandomChoiceError => write!(f, "Random choice error"),
             MeritRankError::NoPathExists => write!(f, "No path exists"),

@@ -772,7 +772,7 @@ impl MeritRank {
                 self.graph.remove_edge(src, dest);
             }
         } else {
-            let _ = self.graph.add_edge(src, dest, weight); // todo: handle MeritRankError
+            let _ = self.graph.upsert_edge(src, dest, weight); // todo: handle MeritRankError
         }
 
         for (walk_mut, invalidated_segment) in &mut invalidated_walks {
@@ -828,7 +828,7 @@ impl MeritRank {
     /// Handles the case where the old weight is zero and the new weight is negative.
     fn zn(&mut self, src: NodeId, dest: NodeId, weight: f64) {
         // Add an edge with the given weight
-        let _ = self.graph.add_edge(src, dest, weight); // todo: handle MeritRankError
+        let _ = self.graph.upsert_edge(src, dest, weight); // todo: handle MeritRankError
         // Update penalties for the edge
         self.update_penalties_for_edge(src, dest, false);
     }
