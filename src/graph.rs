@@ -1,6 +1,7 @@
 // Standard library imports
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
+use itertools::Itertools;
 
 // External crate imports
 use lazy_static::lazy_static;
@@ -35,6 +36,19 @@ impl GraphSingleton {
             graph: MyGraph::new(),
             graphs: HashMap::new(),
             node_names: HashMap::new(),
+        }
+    }
+
+    pub fn contexts() -> Result<Vec<String>, GraphManipulationError> {
+        match GRAPH.lock() {
+            Ok(graph) => {
+                let v = graph.graphs.keys().map(|ctx| ctx.clone()).collect_vec();
+                Ok(v)
+            }
+            Err(e) => Err(GraphManipulationError::MutexLockFailure(format!(
+                "Mutex lock error: {}",
+                e
+            ))),
         }
     }
 

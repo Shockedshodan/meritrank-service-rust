@@ -142,6 +142,60 @@ fn process(req: Message) -> Vec<u8> {
         })
 }
 
+fn mr_node_score_null(ego: &str, target: &str) -> Result<Vec<u8>, Box<dyn std::error::Error + 'static>> {
+    let w: Weight =
+        GraphSingleton::contexts()?
+            .iter()
+            .filter_map(|context| {
+                let mut rank = GraphSingleton::get_rank1(&context).ok()?;
+                let ego_id: NodeId = GraphSingleton::node_name_to_id(ego).ok()?; // thread safety?
+                let target_id: NodeId = GraphSingleton::node_name_to_id(target).ok()?; // thread safety?
+                let _ = rank.calculate(ego_id, *NUM_WALK).ok()?;
+                rank.get_node_score(ego_id, target_id).ok()
+            }) // just skip errors in contexts
+            .sum();
+    let result: Vec<(&str, &str, f64)> = [(ego, target, w)].to_vec();
+    let v: Vec<u8> = rmp_serde::to_vec(&result)?;
+    Ok(v)
+}
+
+fn mr_scores_null(ego: &str) -> Result<Vec<u8>, Box<dyn std::error::Error + 'static>> {
+    let result: Vec<_> =
+        GraphSingleton::contexts()?
+            .iter()
+            .filter_map(|context| {
+                let mut rank = GraphSingleton::get_rank1(&context).ok()?;
+                let node_id: NodeId = GraphSingleton::node_name_to_id(ego).ok()?; // thread safety?
+                let _ = rank.calculate(node_id, *NUM_WALK).ok()?;
+                let rows: Vec<_> = rank
+                    .get_ranks(node_id, None).ok()?
+                    .into_iter()
+                    .map(|(n, s)| {
+                        (
+                            (
+                                ego,
+                                GraphSingleton::node_id_to_name(n).unwrap_or(n.to_string()) // thread safety?
+                            ),
+                            s,
+                        )
+                    })
+                    .collect();
+                Some(rows)
+            })
+            .flatten()
+            .into_iter()
+            .group_by(|(nodes, _)| nodes.clone())
+            .into_iter()
+            .map(|((src, target), rows)|
+                (src, target, rows.map(|(_, score)| score).sum::<Weight>())
+            )
+            .collect();
+
+    let v: Vec<u8> = rmp_serde::to_vec(&result)?;
+    Ok(v)
+}
+
+
 pub struct GraphContext {
     context: Option<String>,
 }
@@ -164,59 +218,11 @@ impl GraphContext {
     }
 
     pub fn process(&self, slice: &[u8]) -> Result<Vec<u8>, Box<dyn std::error::Error>> {
-        /*
-        match rmp_serde::from_slice(slice) {
-            Ok(("context", context, payload)) =>
-                Self::process_context(context, payload),
-
-            Ok(((("src", "=", ego), ("dest", "=", target)), ())) =>
-                self.mr_node_score(ego, target),
-
-            Ok(((("src", "=", ego), ), ())) =>
-                self.mr_scores(ego),
-
-            Ok((((subject, object, amount), ), ())) =>
-                self.mr_edge(subject, object, amount),
-
-            Ok(((("src", "delete", ego), ("dest", "delete", target)), ())) =>
-                self.mr_delete_edge(ego, target),
-
-            Ok(((("src", "delete", ego), ), ())) =>
-                self.mr_delete_node(ego),
-
-            Ok((((ego, "gravity", focus), ), ())) =>
-                self.mr_gravity_graph(ego, focus, true, 3),
-
-            Ok((((ego, "gravity_nodes", focus), ), ())) =>
-                self.mr_gravity_nodes(ego, focus),
-
-            Ok((((ego, "connected"), ), ())) =>
-                self.mr_connected(ego),
-
-            Ok(("for_beacons_global", ())) =>
-                self.mr_beacons_global(),
-
-            Ok(("nodes", ())) =>
-                self.mr_nodes(),
-
-            Ok(("edges", ())) =>
-                self.mr_edges(),
-
-            _ => {
-                let err: String = format!("Error: Cannot understand request {:?}", slice);
-                eprintln!("{}", err);
-                Err(err.into())
-            }
-        }
-        */
-        /*
-        #[proc_macro]
-        pub fn decode<T>(slice: &[u8]) -> T {
-            rmp_serde::from_slice(slice.clone())
-        }
-        */
-
-        if let Ok(("context", context, payload)) = rmp_serde::from_slice(slice) { // rmp_serde::from_slice::<(&str, &str, Vec<u8>)>(slice) {
+        if let Ok(((("src", "=", ego), ("dest", "=", target)), (), "null")) = rmp_serde::from_slice(slice) {
+            mr_node_score_null(ego, target)
+        } else if let Ok(((("src", "=", ego), ), (), "null")) = rmp_serde::from_slice(slice) {
+            mr_scores_null(ego)
+        } else if let Ok(("context", context, payload)) = rmp_serde::from_slice(slice) { // rmp_serde::from_slice::<(&str, &str, Vec<u8>)>(slice) {
             Self::process_context(context, payload)
         } else if let Ok(((("src", "=", ego), ("dest", "=", target)), ())) = rmp_serde::from_slice(slice) {
             self.mr_node_score(ego, target)
