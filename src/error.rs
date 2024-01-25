@@ -79,4 +79,7 @@ pub enum GraphManipulationError {
     /// Error when failing to lock a mutex for concurrent operations
     #[error("Failed to lock mutex: {0}")]
     MutexLockFailure(String),
+
+    #[error("Context {0} not found")]
+    UnknownContextFailure(String),
 }

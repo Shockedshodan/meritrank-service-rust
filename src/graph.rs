@@ -1,13 +1,14 @@
 // Standard library imports
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
+use itertools::Itertools;
 
 // External crate imports
 use lazy_static::lazy_static;
 
 // Current crate (`crate::`) imports
 pub use crate::error::GraphManipulationError;
-// #[allow(unused_imports)]
+use crate::error::GraphManipulationError::UnknownContextFailure;
 // use crate::logger::Logger;
 
 // Current crate (`crate::`) imports
@@ -22,7 +23,8 @@ lazy_static! {
 #[allow(dead_code)]
 // GraphSingleton structure
 pub struct GraphSingleton {
-    graph: MyGraph,
+    graph: MyGraph, // null-context
+    graphs: HashMap<String, MyGraph>, // contexted
     node_names: HashMap<String, NodeId>,
 }
 
@@ -32,7 +34,21 @@ impl GraphSingleton {
     pub fn new() -> GraphSingleton {
         GraphSingleton {
             graph: MyGraph::new(),
+            graphs: HashMap::new(),
             node_names: HashMap::new(),
+        }
+    }
+
+    pub fn contexts() -> Result<Vec<String>, GraphManipulationError> {
+        match GRAPH.lock() {
+            Ok(graph) => {
+                let v = graph.graphs.keys().map(|ctx| ctx.clone()).collect_vec();
+                Ok(v)
+            }
+            Err(e) => Err(GraphManipulationError::MutexLockFailure(format!(
+                "Mutex lock error: {}",
+                e
+            ))),
         }
     }
 
@@ -41,6 +57,21 @@ impl GraphSingleton {
         match GRAPH.lock() {
             Ok(graph) => {
                 let merit_rank = MeritRank::new(graph.graph.clone())?;
+                Ok(merit_rank)
+            }
+            Err(e) => Err(GraphManipulationError::MutexLockFailure(format!(
+                "Mutex lock error: {}",
+                e
+            ))),
+        }
+    }
+
+    pub fn get_rank1(context: &str) -> Result<MeritRank, GraphManipulationError> {
+        match GRAPH.lock() {
+            Ok(graph) => {
+                let g =
+                    graph.graphs.get(context).ok_or(UnknownContextFailure(context.to_string()))?;
+                let merit_rank = MeritRank::new(g.clone())?;
                 Ok(merit_rank)
             }
             Err(e) => Err(GraphManipulationError::MutexLockFailure(format!(
@@ -60,9 +91,30 @@ impl GraphSingleton {
         &self.graph
     }
 
+    pub fn borrow_graph0(&self, context: &String) -> Result<&MyGraph,GraphManipulationError> {
+        if !self.graphs.contains_key(context) {
+            //self.graphs.insert(context.clone(), MyGraph::new());
+            Err(UnknownContextFailure(context.clone()))
+        } else {
+            Ok( self.graphs.get(context).expect("No context at borrow_graph1!") )
+        }
+    }
+    pub fn borrow_graph1(&mut self, context: &String) -> &MyGraph {
+        if !self.graphs.contains_key(context) {
+            self.graphs.insert(context.clone(), MyGraph::new());
+        }
+        self.graphs.get(context).expect("No context at borrow_graph1!")
+    }
     /// Borrow Graph Mut
     pub fn borrow_graph_mut(&mut self) -> &mut MyGraph {
         &mut self.graph
+    }
+
+    pub fn borrow_graph_mut1(&mut self, context: &String) -> &mut MyGraph {
+        if !self.graphs.contains_key(context) {
+            self.graphs.insert(context.clone(), MyGraph::new());
+        }
+        self.graphs.get_mut(context).expect("No context at  borrow_graph_mut1!")
     }
 
     // Node-related methods
@@ -100,6 +152,17 @@ impl GraphSingleton {
         }
     }
 
+    pub fn get_node_id1(&mut self, context: &str, node_name: &str) -> NodeId {
+        if let Some(&node_id) = self.node_names.get(node_name) {
+            // todo: what if the node exists in another context?
+            node_id
+        } else {
+            let node_id = self.get_node_id(node_name); // create a node in null-context
+            let graph = self.borrow_graph_mut1(&context.to_string());
+            graph.add_node(node_id.into());
+            node_id
+        }
+    }
     /// Returns the name of the node with the given ID.
     pub fn node_name_to_id_unsafe(&self, node_name: &str) -> Result<NodeId, GraphManipulationError> {
         if let Some(&node_id) = self.node_names.get(node_name) {
@@ -151,6 +214,7 @@ impl GraphSingleton {
         match GRAPH.lock() {
             Ok(mut graph) => {
                 graph.graph.clear();
+                graph.graphs.clear();
                 graph.node_names.clear();
                 Ok(())
             }
@@ -160,4 +224,6 @@ impl GraphSingleton {
             ))),
         }
     }
+
+    // TODO: clear context?
 }

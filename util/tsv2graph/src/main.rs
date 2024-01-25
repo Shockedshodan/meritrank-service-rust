@@ -15,9 +15,12 @@ lazy_static! {
 }
 
 const FILES: &'static [&str] = &[
+    "edges.tsv"
+    /*
     "/tmp/vote_user.tsv",
     "/tmp/vote_comment.tsv",
     "/tmp/vote_beacon.tsv"
+    */
 ];
 /*
 full_dump.sql.gz (30 Dec, 2023):
@@ -27,6 +30,10 @@ postgres=# COPY (select * from vote_comment) TO '/tmp/vote_comment.tsv'  CSV  HE
 COPY 112
 postgres=# COPY (select * from vote_beacon) TO '/tmp/vote_beacon.tsv'  CSV  HEADER DELIMITER E'\t';
 COPY 184
+
+postgres=# COPY (select * from edges) TO '/tmp/edges.tsv'  CSV  HEADER DELIMITER E'\t';
+COPY 860
+
  */
 
 fn request<T: for<'a> serde::Deserialize<'a>>(
