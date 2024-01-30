@@ -1,0 +1,3 @@
+[submodule "pgmer2"]
+	path = pgmer2
+	url = https://github.com/shestero/pgmer2
